@@ -1,0 +1,66 @@
+{
+  "_source": "v1 手工裁剪件:字段名取自云笔构建流程模块(worldview/storyCore/characters/factions/power-systems/geo-maps/currencies)与构建表单全量.md;每类 3-5 个核心字段 + 自由文本,跑一周按体感增删(任务书风险 4)。",
+  "_write_rule": "style_fingerprint 不在本表:它由蒸馏管道独占写入(L1 特殊区),代码层拒绝一切手工/AI 写入。",
+  "categories": [
+    {
+      "key": "worldview",
+      "label": "世界观",
+      "fields": [
+        { "key": "world_type", "label": "世界类型", "type": "text" },
+        { "key": "core_rules", "label": "核心规则", "type": "textarea" },
+        { "key": "power_source", "label": "力量来源", "type": "text" },
+        { "key": "taboo", "label": "世界禁忌", "type": "textarea" }
+      ]
+    },
+    {
+      "key": "character",
+      "label": "角色",
+      "fields": [
+        { "key": "role", "label": "身份/职业", "type": "text" },
+        { "key": "personality", "label": "性格特质", "type": "textarea" },
+        { "key": "motivation", "label": "核心动机", "type": "textarea" },
+        { "key": "abilities", "label": "能力/手段", "type": "textarea" }
+      ]
+    },
+    {
+      "key": "power",
+      "label": "力量体系(含功法)",
+      "fields": [
+        { "key": "ranks", "label": "等级划分", "type": "textarea" },
+        { "key": "how_to_gain", "label": "修炼/获得方式", "type": "textarea" },
+        { "key": "represent_skills", "label": "代表功法/技能", "type": "textarea" },
+        { "key": "cost", "label": "代价/限制", "type": "textarea" }
+      ]
+    },
+    {
+      "key": "faction",
+      "label": "势力阵营",
+      "fields": [
+        { "key": "stance", "label": "阵营立场", "type": "text" },
+        { "key": "key_members", "label": "核心人物", "type": "textarea" },
+        { "key": "resources", "label": "掌控资源", "type": "textarea" },
+        { "key": "relation_to_hero", "label": "与主角关系", "type": "text" }
+      ]
+    },
+    {
+      "key": "map",
+      "label": "地图",
+      "fields": [
+        { "key": "place_type", "label": "地点类型", "type": "text" },
+        { "key": "belongs_to", "label": "地理归属", "type": "text" },
+        { "key": "features", "label": "环境特点/危险", "type": "textarea" },
+        { "key": "plot_function", "label": "剧情功能", "type": "textarea" }
+      ]
+    },
+    {
+      "key": "item_economy",
+      "label": "物品与经济",
+      "fields": [
+        { "key": "item_class", "label": "类别(物品/货币)", "type": "text" },
+        { "key": "grade", "label": "品阶/面值", "type": "text" },
+        { "key": "function", "label": "核心功能", "type": "textarea" },
+        { "key": "circulation", "label": "归属/流通", "type": "textarea" }
+      ]
+    }
+  ]
+}

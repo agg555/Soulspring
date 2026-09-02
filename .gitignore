@@ -1,0 +1,38 @@
+# --- 秘密与本地态 ---
+# API key 只存在这里,绝不入库(设置页写入,git 忽略)
+data/secrets.local.json
+
+# Python
+backend/.venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# 运行日志
+*.log
+
+# SQLite 临时文件
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+# 迁移/维护时的人工备份,不入仓
+data/*.db.副本备份*
+
+# 前端构建残留(重构建时改名的旧 dist)
+frontend/dist.old-*/
+
+# --- 素材库副本(原件在 E:\大项目终极anget\可用,内容一致,不重复入库) ---
+可用/
+
+# 嵌套副本(迁移包解压物/主本拷贝),不入库
+soulspring/
+
+# --- 公开发布版追加:运行数据与内部产物不入公开库 ---
+data/
+docs/
+gui-test-screenshots/
+*.db

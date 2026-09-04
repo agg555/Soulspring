@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type {
-  BranchSession, NodeDetail, SceneFields,
+  BranchSession, NodeDetail, SceneFields, Suggestion,
 } from "../types";
 import ChatPanel from "./ChatPanel";
 
@@ -25,13 +25,14 @@ const STATUS_LABEL: Record<string, string> = {
   final_review: "待终审", finalized: "定稿",
 };
 
-export default function NodeDrawer({ pid, nid, onClose, onChanged, onGoPanel, onSwitch }: {
+export default function NodeDrawer({ pid, nid, onClose, onChanged, onGoPanel, onSwitch, onShowLinks }: {
   pid: string;
   nid: string;
   onClose: () => void;
   onChanged: () => void;                                    // 主干变化后通知树刷新
   onGoPanel?: (tab: "workbench" | "review") => void;
   onSwitch?: (nid: string) => void;                         // A2:抽屉内点子节点切换对象
+  onShowLinks?: (etype: string, nid: string, title: string) => void;  // B3 互链抽屉(执行书 §3)
 }) {
   const [detail, setDetail] = useState<NodeDetail["node"] | null>(null);
   const [branches, setBranches] = useState<BranchSession[]>([]);
@@ -50,6 +51,13 @@ export default function NodeDrawer({ pid, nid, onClose, onChanged, onGoPanel, on
   const [error, setError] = useState("");
 
   const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(""), 4000); };
+
+  // 顺手修:轻档采纳改前值(outline_field 仅 title/summary/note)——不传则采纳弹窗"改前"恒为空
+  const getAdoptBefore = (s: Suggestion): string => {
+    const t = (s.target ?? {}) as Record<string, unknown>;
+    const map: Record<string, string> = { title, summary, note };
+    return t.field ? map[String(t.field)] ?? "" : "";
+  };
 
   const load = () => {
     api.outlineDetail(nid).then((r) => {
@@ -212,7 +220,14 @@ export default function NodeDrawer({ pid, nid, onClose, onChanged, onGoPanel, on
         <span className={`kind kind-${detail?.kind ?? ""}`}>
           {KIND_LABEL[detail?.kind ?? ""] ?? "…"}
         </span>
-        <button className="link" onClick={onClose}>关闭抽屉 ×</button>
+        <span className="row" style={{ margin: 0 }}>
+          {onShowLinks && detail && (
+            <button className="link" onClick={() => onShowLinks("outline_node", nid, detail.title)}>
+              🔗 关联
+            </button>
+          )}
+          <button className="link" onClick={onClose}>关闭抽屉 ×</button>
+        </span>
       </div>
       {msg && <p className="ok">{msg}</p>}
       {error && <p className="error">{error}</p>}
@@ -347,6 +362,7 @@ export default function NodeDrawer({ pid, nid, onClose, onChanged, onGoPanel, on
             ownerId={nid}
             defaultSessionName={`节点讨论·${detail.title}`}
             allowPresets
+            getAdoptBefore={getAdoptBefore}
             emptyHint="节点级对话:AI 上下文 = 祖先链 + 本节点字段 + 相关档案。选「优化」要改法,选「奇思妙想」要 3-5 个方向。"
           />
         </>

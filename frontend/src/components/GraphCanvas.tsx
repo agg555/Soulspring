@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { GraphEdge, GraphNode, Suggestion } from "../types";
 import ChatPanel from "./ChatPanel";
+import { uiConfirm, uiPrompt } from "./uiConfirm";
 
 /**
  * 统一图谱引擎(第四批 A,任务词 2026-09-01):
@@ -22,7 +23,57 @@ const KIND_COLOR: Record<string, string> = {
 };
 const EDGE_KINDS = Object.keys(KIND_COLOR);
 
+/* 节点实体类型着色(体感三桶 2026-09-04 拍板 3a):l1 六类+事件/自由;色板沿用边类别同族 */
+const NODE_CATEGORY_COLOR: Record<string, string> = {
+  worldview: "#7aa2f7", character: "#9ece6a", power: "#bb9af7", faction: "#e0af68",
+  map: "#4fd6be", item_economy: "#ff9e64", timeline_event: "#f7768e", free: "#8b93a1",
+};
+const NODE_CATEGORY_LABEL: Record<string, string> = {
+  worldview: "世界观", character: "角色", power: "力量", faction: "势力",
+  map: "地理", item_economy: "物品经济", timeline_event: "事件", free: "自由",
+};
+
 type Pt = { x: number; y: number };
+
+/* 顺手修(体感三桶 2026-09-04):定宽框内换行/截断,防长标签溢出压到邻居 */
+const CHAR_W = (ch: string) => (ch.charCodeAt(0) > 0xff ? 13 : 7.5);
+
+/** 定宽内换行,最多 maxLines 行;最后一行放不下以省略号收尾。 */
+export function wrapText(text: string, maxW: number, maxLines: number): string[] {
+  const chars = Array.from(text);
+  const lines: string[] = [];
+  let cur: string[] = [], curW = 0;
+  for (const ch of chars) {
+    const w = CHAR_W(ch);
+    if (curW + w > maxW && cur.length) {
+      if (lines.length === maxLines - 1) {
+        while (curW + CHAR_W("…") > maxW && cur.length > 1) {
+          curW -= CHAR_W(cur.pop()!);
+        }
+        return [...lines, cur.join("") + "…"];
+      }
+      lines.push(cur.join(""));
+      cur = []; curW = 0;
+    }
+    cur.push(ch); curW += w;
+  }
+  if (cur.length) lines.push(cur.join(""));
+  return lines;
+}
+
+/** 单行截断,超宽以省略号收尾(边标签用)。 */
+export function truncText(text: string, maxW: number): string {
+  const chars = Array.from(text);
+  let total = 0;
+  for (const ch of chars) total += CHAR_W(ch);
+  if (total <= maxW) return text;
+  let curW = 0;
+  for (let i = 0; i < chars.length; i++) {
+    if (curW + CHAR_W(chars[i]) + CHAR_W("…") > maxW) return chars.slice(0, i).join("") + "…";
+    curW += CHAR_W(chars[i]);
+  }
+  return text;
+}
 
 /** 节点中心 a 朝 b 方向与 a 矩形边框的交点(边缘锚点)。 */
 function rectAnchor(a: Pt, b: Pt): Pt {
@@ -44,9 +95,10 @@ function sideAnchors(n: GraphNode): { side: string; pt: Pt }[] {
   ];
 }
 
-export default function GraphBoardView({ boardId, onBack }: {
+export default function GraphBoardView({ boardId, onBack, onShowLinks }: {
   boardId: string;
   onBack: () => void;
+  onShowLinks?: (etype: string, nid: string, title: string) => void;   // B3 互链
 }) {
   const [board, setBoard] = useState<import("../types").GraphBoard | null>(null);
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -93,6 +145,7 @@ export default function GraphBoardView({ boardId, onBack }: {
 
   // ── 指针交互 ──
   const onNodeDown = (e: React.PointerEvent, n: GraphNode) => {
+    if (e.button !== 0) { e.preventDefault(); return; } // 仅左键拖节点(速赢④:中键 autoscroll 曾致画布飞走)
     e.stopPropagation();
     setSelected({ type: "node", id: n.id });
     setEdgeMenu(null);
@@ -102,6 +155,7 @@ export default function GraphBoardView({ boardId, onBack }: {
   };
 
   const onCanvasDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) { e.preventDefault(); return; } // 仅左键平移;中键默认 autoscroll 会劫持坐标(速赢④)
     setSelected(null);
     setEdgeMenu(null);
     panRef.current = { sx: e.clientX, sy: e.clientY, pan: { ...pan } };
@@ -170,6 +224,16 @@ export default function GraphBoardView({ boardId, onBack }: {
     setZoom(nz);
   };
 
+  // 速赢 2.2(2026-09-03):按钮缩放——以画布中心为锚,步进 1.25;重置回 1:1。
+  const zoomBy = (factor: number) => {
+    const nz = Math.max(0.4, Math.min(2.5, zoom * factor));
+    const rect = svgRef.current?.getBoundingClientRect();
+    const mx = rect ? rect.width / 2 : 300, my = rect ? rect.height / 2 : 260;
+    setPan({ x: mx - (mx - pan.x) * (nz / zoom), y: my - (my - pan.y) * (nz / zoom) });
+    setZoom(nz);
+  };
+  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+
   // ── 落库操作 ──
   const confirmLink = async () => {
     if (!linkForm) return;
@@ -214,6 +278,24 @@ export default function GraphBoardView({ boardId, onBack }: {
     } catch (e: unknown) {
       setError(String((e as Error).message || e));
     }
+  };
+
+
+  // 速赢 2.1(2026-09-03):采纳图谱建议时注入落位锚——edge 用两端中点,节点用其坐标,
+  // 其余(纯文本建议)用当前视口中心;后端据此环绕找不重叠空位。
+  const getAdoptAnchor = (sug: Suggestion): { x: number; y: number } | null => {
+    const t = (sug.target ?? {}) as { edge_id?: string; source_node_id?: string; node_id?: string };
+    if (t.edge_id) {
+      const e = edges.find((x) => x.id === t.edge_id);
+      const a = e && nodeById(e.from_node_id), b = e && nodeById(e.to_node_id);
+      if (a && b) return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    }
+    const nid = t.source_node_id ?? t.node_id;
+    if (nid) {
+      const n = nodeById(nid);
+      if (n) return { x: n.x, y: n.y };
+    }
+    return null;
   };
 
   const addDerived = async (eid: string) => {
@@ -331,7 +413,19 @@ export default function GraphBoardView({ boardId, onBack }: {
           </button>
         ))}
       </div>
+      {/* 节点实体类型图例(拍板 3a):只列本板出现的类型 */}
+      {[...new Set(nodes.map((n) => n.category ?? ""))].some((c) => NODE_CATEGORY_COLOR[c]) && (
+        <div className="chips" style={{ marginBottom: 6 }}>
+          <span className="muted small">节点类型:</span>
+          {[...new Set(nodes.map((n) => n.category ?? ""))].filter((c) => NODE_CATEGORY_COLOR[c]).map((c) => (
+            <span key={c} className="chip">
+              <span style={{ color: NODE_CATEGORY_COLOR[c] }}>●</span> {NODE_CATEGORY_LABEL[c] ?? c}
+            </span>
+          ))}
+        </div>
+      )}
 
+      <div className="graph-stage">
       <svg
         ref={svgRef}
         className="graph-svg"
@@ -359,6 +453,7 @@ export default function GraphBoardView({ boardId, onBack }: {
             const len = Math.hypot(nx, ny) || 1;
             const cx = mx + (nx / len) * off, cy = my + (ny / len) * off;
             const color = KIND_COLOR[e.kind] ?? "#7aa2f7";
+            const efs = Math.min(22, Math.max(11, 14 / zoom));
             const mid = toScreen({ x: mx + (cx - mx) * 0.5, y: my + (cy - my) * 0.5 });
             return (
               <g key={e.id}>
@@ -369,8 +464,11 @@ export default function GraphBoardView({ boardId, onBack }: {
                     ev.stopPropagation();
                     setSelected({ type: "edge", id: e.id });
                   }} />
-                <text x={cx} y={cy - 6} textAnchor="middle" fontSize={11}
-                  fill={color} style={{ pointerEvents: "none" }}>{e.kind}{e.label ? `·${e.label}` : ""}</text>
+                <text x={cx} y={cy - 6} textAnchor="middle"
+                  fontSize={efs}
+                  fill={color} paintOrder="stroke" stroke="var(--panel)" strokeWidth={3 / zoom}
+                  style={{ pointerEvents: "none" }}>
+                  {truncText(`${e.kind}${e.label ? `·${e.label}` : ""}`, efs * 11.5)}</text>
                 {/* 边中点控制点(A5):r6 视觉 + r12 热区(fill none 的 hit-test 用 pointerEvents=all) */}
                 <circle cx={mx + (cx - mx) * 0.5} cy={my + (cy - my) * 0.5} r={12}
                   fill="none" pointerEvents="all"
@@ -387,27 +485,42 @@ export default function GraphBoardView({ boardId, onBack }: {
           {nodes.map((n) => {
             const isHot = hotNode === n.id;
             const isSel = selected?.type === "node" && selected.id === n.id;
+            // 顺手修:标签框内换行(≤2 行)+超长省略;悬浮 <title> 看全名
+            const labelLines = wrapText(n.label || "", NODE_W - 18, 2);
+            const two = labelLines.length > 1;
+            const labelBase = n.sub_label ? (two ? -9 : -3) : (two ? -2 : 5);
+            const catColor = NODE_CATEGORY_COLOR[n.category ?? ""] ?? null;
             return (
               <g key={n.id} onPointerDown={(ev) => onNodeDown(ev, n)}
                 style={{ cursor: "grab" }}>
+                <title>{n.label}{n.sub_label ? `\n${n.sub_label}` : ""}</title>
                 {isHot && sideAnchors(n).map((a, i) => (
                   <circle key={i} cx={a.pt.x} cy={a.pt.y} r={9} fill="none"
                     stroke="var(--accent)" strokeWidth={2} className="hot-anchor" />
                 ))}
                 <rect x={n.x - NODE_W / 2} y={n.y - NODE_H / 2} width={NODE_W} height={NODE_H}
                   rx={9} fill="var(--panel)"
-                  stroke={isSel || isHot ? "var(--accent)" : "var(--border)"} strokeWidth={isSel || isHot ? 2.2 : 1.4} />
-                <text x={n.x} y={n.sub_label ? n.y - 3 : n.y + 5} textAnchor="middle"
-                  fontSize={13} fill="var(--text)">{n.label}</text>
+                  stroke={isSel || isHot ? "var(--accent)" : catColor ?? "var(--border)"}
+                  strokeWidth={isSel || isHot ? 2.2 : catColor ? 1.8 : 1.4} />
+                {labelLines.map((ln, i) => (
+                  <text key={i} x={n.x} y={n.y + labelBase + i * 15} textAnchor="middle"
+                    fontSize={13} fill="var(--text)">{ln}</text>
+                ))}
                 {n.sub_label && (
-                  <text x={n.x} y={n.y + 15} textAnchor="middle" fontSize={10}
-                    fill="var(--muted)">{n.sub_label}</text>
+                  <text x={n.x} y={n.y + (two ? 20 : 15)} textAnchor="middle" fontSize={10}
+                    fill="var(--muted)">{truncText(n.sub_label, NODE_W - 12)}</text>
                 )}
               </g>
             );
           })}
         </g>
       </svg>
+      <div className="graph-zoombar">
+        <button title="放大" onClick={() => zoomBy(1.25)}>＋</button>
+        <button title="缩小" onClick={() => zoomBy(1 / 1.25)}>－</button>
+        <button title="重置 1:1" onClick={resetView}>1:1</button>
+      </div>
+      </div>
 
       {/* A4 自动连线小表单 */}
       {linkForm && (
@@ -431,8 +544,8 @@ export default function GraphBoardView({ boardId, onBack }: {
       {edgeMenu && edgeMenuEdge && (
         <div className="graph-menu" style={{ left: edgeMenu.sx + 12, top: edgeMenu.sy + 8 }}>
           <button onClick={() => addDerived(edgeMenu.eid)}>加派生节点</button>
-          <button onClick={() => {
-            const label = prompt("新标签", edgeMenuEdge.label);
+          <button onClick={async () => {
+            const label = await uiPrompt("新标签", edgeMenuEdge.label);
             if (label !== null) api.patchGraphEdge(edgeMenu.eid, { label })
               .then(() => { load(); setEdgeMenu(null); }).catch((e) => setError(String(e)));
           }}>改标签</button>
@@ -458,6 +571,15 @@ export default function GraphBoardView({ boardId, onBack }: {
           </div>
           {selNode && (
             <>
+              <div className="row spread">
+                <b>{selNode.label}</b>
+                {onShowLinks && (
+                  <button className="link"
+                    onClick={() => onShowLinks("graph_node", selNode.id, selNode.label)}>
+                    🔗 关联
+                  </button>
+                )}
+              </div>
               <div className="form">
                 <label>名称
                   <input defaultValue={selNode.label} key={selNode.id + "l"}
@@ -471,8 +593,8 @@ export default function GraphBoardView({ boardId, onBack }: {
                 </label>
               </div>
               <div className="row">
-                <button onClick={() => {
-                  if (confirm(`删除节点「${selNode.label}」及其连线?`)) {
+                <button onClick={async () => {
+                  if (await uiConfirm(`删除节点「${selNode.label}」及其连线?`)) {
                     api.deleteGraphNode(selNode.id).then(() => { setSelected(null); load(); });
                   }
                 }}>删除节点</button>
@@ -484,6 +606,7 @@ export default function GraphBoardView({ boardId, onBack }: {
                 defaultSessionName={`节点讨论·${selNode.label}`}
                 allowPresets
                 getAdoptBefore={getAdoptBefore}
+                getAdoptAnchor={getAdoptAnchor}
                 onAdopted={load}
               />
             </>
@@ -504,8 +627,8 @@ export default function GraphBoardView({ boardId, onBack }: {
                 </label>
               </div>
               <div className="row">
-                <button onClick={() => {
-                  if (confirm("删除这条连线?")) {
+                <button onClick={async () => {
+                  if (await uiConfirm("删除这条连线?")) {
                     api.deleteGraphEdge(selEdge.id).then(() => { setSelected(null); load(); });
                   }
                 }}>删除连线</button>
@@ -517,6 +640,7 @@ export default function GraphBoardView({ boardId, onBack }: {
                 defaultSessionName={`连线讨论`}
                 allowPresets
                 getAdoptBefore={getAdoptBefore}
+                getAdoptAnchor={getAdoptAnchor}
                 onAdopted={load}
               />
             </>
@@ -528,6 +652,7 @@ export default function GraphBoardView({ boardId, onBack }: {
               ownerId={boardId}
               defaultSessionName={`整板发散·${board?.name}`}
               allowPresets
+              getAdoptAnchor={getAdoptAnchor}
               onAdopted={load}
             />
           )}

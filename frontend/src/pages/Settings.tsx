@@ -52,7 +52,8 @@ export default function SettingsPage() {
   };
   const savePricing = async () => {
     try {
-      await api.putPricing({ default: s.pricing.default, models: s.pricing.models });
+      await api.putPricing({ default: s.pricing.default, models: s.pricing.models,
+        standard: s.pricing.standard ?? null, discount_until: s.pricing.discount_until ?? "" });
       flash("价格基准已保存,即时生效");
     } catch (e: unknown) {
       setError(String((e as Error).message || e));
@@ -158,6 +159,13 @@ export default function SettingsPage() {
       pricing: { ...s.pricing, default: { ...s.pricing.default, [field]: Number(value) || 0 } },
     });
   };
+  const patchStandardPrice = (field: "input_per_m" | "output_per_m", value: string) => {
+    const std = s.pricing.standard ?? { input_per_m: 0, output_per_m: 0 };
+    set({ pricing: { ...s.pricing, standard: { ...std, [field]: Number(value) || 0 } } });
+  };
+  const patchDiscountUntil = (value: string) => {
+    set({ pricing: { ...s.pricing, discount_until: value } });
+  };
 
   return (
     <div>
@@ -244,7 +252,33 @@ export default function SettingsPage() {
             onChange={(e) => patchDefaultPrice("output_per_m", e.target.value)}
           />
         </label>
+        <label>
+          折扣截止日(含当天,过期自动按正价计)
+          <input
+            type="date"
+            value={s.pricing.discount_until ?? ""}
+            onChange={(e) => patchDiscountUntil(e.target.value)}
+          />
+        </label>
         <button onClick={savePricing}>保存价格基准</button>
+        <label>
+          正价输入(到期自动启用)
+          <input
+            type="number"
+            step="0.01"
+            value={s.pricing.standard?.input_per_m ?? ""}
+            onChange={(e) => patchStandardPrice("input_per_m", e.target.value)}
+          />
+        </label>
+        <label>
+          正价输出(到期自动启用)
+          <input
+            type="number"
+            step="0.01"
+            value={s.pricing.standard?.output_per_m ?? ""}
+            onChange={(e) => patchStandardPrice("output_per_m", e.target.value)}
+          />
+        </label>
       </div>
       <p className="muted">
         单章预算告警线:¥{s.budget.per_chapter_alert}(任务书 §6)。0.25 元线的标定依赖真实价格,运行期校准。

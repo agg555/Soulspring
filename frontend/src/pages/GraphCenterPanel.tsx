@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { GraphBoard } from "../types";
 import GraphBoardView from "../components/GraphCanvas";
+import { uiConfirm } from "../components/uiConfirm";
 
 /**
  * 图谱中心(第四批 B,任务词 2026-09-01):书工作区图谱入口统一为板列表,
@@ -13,7 +14,10 @@ const KIND_LABEL: Record<string, string> = {
   faction: "势力关系", hook: "伏笔流转", power: "力量体系", free: "自由板", worldview: "世界观概念",
 };
 
-export default function GraphCenterPanel({ pid }: { pid: string }) {
+export default function GraphCenterPanel({ pid, onShowLinks }: {
+  pid: string;
+  onShowLinks?: (etype: string, nid: string, title: string) => void;   // B3 互链
+}) {
   const [boards, setBoards] = useState<GraphBoard[] | null>(null);
   const [kinds, setKinds] = useState<string[]>([]);
   const [openBoard, setOpenBoard] = useState<string | null>(null);
@@ -32,7 +36,10 @@ export default function GraphCenterPanel({ pid }: { pid: string }) {
   useEffect(load, [pid]);
 
   if (openBoard) {
-    return <GraphBoardView boardId={openBoard} onBack={() => { setOpenBoard(null); load(); }} />;
+    return (
+      <GraphBoardView boardId={openBoard} onShowLinks={onShowLinks}
+        onBack={() => { setOpenBoard(null); load(); }} />
+    );
   }
 
   const create = async () => {
@@ -77,8 +84,8 @@ export default function GraphCenterPanel({ pid }: { pid: string }) {
               <td>{b.node_count ?? 0}</td>
               <td>{b.edge_count ?? 0}</td>
               <td>
-                <button className="link" onClick={() => {
-                  if (confirm(`删除图谱板「${b.name}」及其全部节点连线?`)) {
+                <button className="link" onClick={async () => {
+                  if (await uiConfirm(`删除图谱板「${b.name}」及其全部节点连线?`)) {
                     api.deleteGraphBoard(b.id).then(load);
                   }
                 }}>删</button>

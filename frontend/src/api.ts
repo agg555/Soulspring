@@ -175,6 +175,8 @@ export const api = {
   putPricing: (patch: {
     default?: import("./types").PriceEntry;
     models?: import("./types").PriceEntry[];
+    standard?: import("./types").PriceEntry | null;
+    discount_until?: string;
   }) => request("/api/settings/pricing", { method: "PUT", body: JSON.stringify(patch) }),
   putApiKey: (apiKey: string) =>
     request("/api/settings/api-key", { method: "PUT", body: JSON.stringify({ api_key: apiKey }) }),
@@ -241,7 +243,7 @@ export const api = {
   ) =>
     request<{ ok: boolean; task: import("./types").GenTask }>(
       `/api/conversations/${sid}/messages`, { method: "POST", body: JSON.stringify(body) }),
-  adoptSuggestion: (body: { session_id: string; message_id: string; index: number }) =>
+  adoptSuggestion: (body: { session_id: string; message_id: string; index: number; anchor?: { x: number; y: number } | null }) =>
     request<{
       ok: boolean;
       target: string;
@@ -414,4 +416,8 @@ export const api = {
   generateGraphNodes: (bid: string, body: { source: string; category?: string }) =>
     request<{ ok: boolean; created: number; skipped: number }>(
       `/api/graphs/boards/${bid}/generate`, { method: "POST", body: JSON.stringify(body) }),
+  // B3 实体互链(骨架批执行书 §3):聚合某实体的关联对象
+  entityLinks: (pid: string, etype: string, id: string) =>
+    request<import("./types").EntityLinks>(
+      `/api/books/${pid}/entity-links?etype=${encodeURIComponent(etype)}&id=${encodeURIComponent(id)}`),
 };

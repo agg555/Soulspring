@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import date
 import uuid
 from typing import Any
 
@@ -73,8 +74,18 @@ def resolve_thinking_level(action: str, model: str) -> str | None:
 
 
 def price_for(model: str) -> tuple[float, float]:
-    """返回 (input_per_m, output_per_m),元/百万 token;未命中模型用 default。"""
+    """返回 (input_per_m, output_per_m),元/百万 token;未命中模型用 default。
+
+    双份价格(2026-09-03 拍板):discount_until(含当天)过期后自动用 standard 正价,
+    未配置或未过期用 default——到期免手工切换,成本不失真。"""
     pricing = get_settings()["pricing"]
+    std, until = pricing.get("standard"), pricing.get("discount_until")
+    if std and until:
+        try:
+            if date.today().isoformat() > str(until):
+                return (float(std.get("input_per_m", 0)), float(std.get("output_per_m", 0)))
+        except ValueError:
+            pass
     for entry in pricing.get("models", []):
         if entry.get("model") == model:
             return float(entry.get("input_per_m", 0)), float(entry.get("output_per_m", 0))
@@ -127,6 +138,7 @@ def chat_completion(
     action: str,
     role: str = "default",
     project_id: str | None = None,
+    node_id: str | None = None,
     agent_type: str = "chat",
     input_summary: str | None = None,
     max_tokens_override: int | None = None,
@@ -136,11 +148,13 @@ def chat_completion(
 
     供各功能统一走此入口,保证"每次调用自动落账"(M1 判据)。
     max_tokens_override:个别动作(如一键构建的长 JSON)需要超出设置页的输出上限时使用。
+    node_id:章节语境调用传入,agent_runs 落列供驾驶舱按章聚合成本
+    (实跑 2026-09-02 拍板 #5;此前全表 None 导致成本列恒 0)。
     """
     from ..llm.client import get_client, get_role_params
 
-    run_id = start_run(action, project_id=project_id, agent_type=agent_type,
-                       input_summary=input_summary)
+    run_id = start_run(action, project_id=project_id, node_id=node_id,
+                       agent_type=agent_type, input_summary=input_summary)
     params = get_role_params(role)
     if max_tokens_override:
         params["max_tokens"] = max_tokens_override

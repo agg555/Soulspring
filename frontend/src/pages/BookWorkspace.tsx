@@ -10,21 +10,44 @@ import ChaishuPanel from "./ChaishuPanel";
 import DashboardPanel from "./DashboardPanel";
 import TimelinePanel from "./TimelinePanel";
 import GraphCenterPanel from "./GraphCenterPanel";
+import ChatPanel from "../components/ChatPanel";
+import EntityDrawer from "../components/EntityDrawer";
 
-const TABS = [
-  { key: "info", label: "书籍信息" },
-  { key: "l1", label: "L1 档案库" },
+/**
+ * 书工作区三栏骨架(骨架批批次一,执行书 2026-09-02 v1.2 §1/§4,2026-09-04 实施):
+ * - 左·功能区:大纲树(默认)/L1 档案库/书籍信息,可切换;
+ * - 中·agent 对话台(常态,书级多线+起步方向卡+建议走采纳闸门)↔ 任务台(写章
+ *   工作台/终审对话台,重交互占中央)双模式;
+ * - 右·功能区:图谱中心(默认)/书况台/剧情时间线/L2 看板/拆书官,可切换;
+ * - 左右栏可折叠;原 10 页签功能全部在新壳可达(批次一判据:功能不丢)。
+ * 版块化红线:各版块 = 可插拔面板,由本壳(面板宿主)组织,不硬编码互调;
+ * B3 互链抽屉落地后作为跨版块跳转枢纽(执行书 §3)。
+ */
+const LEFT_PANELS = [
   { key: "outline", label: "大纲树" },
-  { key: "workbench", label: "写章工作台" },
-  { key: "review", label: "终审对话台" },
-  { key: "dashboard", label: "驾驶舱" },
-  { key: "timeline", label: "剧情时间线" },
+  { key: "l1", label: "档案库" },
+  { key: "info", label: "书籍信息" },
+] as const;
+const RIGHT_PANELS = [
   { key: "graphs", label: "图谱中心" },
+  { key: "dashboard", label: "书况台" },
+  { key: "timeline", label: "剧情时间线" },
   { key: "l2board", label: "L2 看板" },
   { key: "chaishu", label: "拆书官" },
 ] as const;
+const TASK_PANELS = [
+  { key: "workbench", label: "写章工作台" },
+  { key: "review", label: "终审对话台" },
+] as const;
 
 const FOLLOW_GLOBAL = "__follow_global__";   // 下拉哨兵值:移除单本书覆盖,回到全局默认
+
+// 书级起步方向卡(执行书 §2 拍板:帮铺大纲/帮灌设定/帮写第一章;预设正文在后端 PRESET_PROMPTS)
+const BOOK_PRESETS = [
+  { key: "book_outline", label: "帮铺大纲", hint: "给出/补全整体大纲结构:卷·近纲·章层级 + 一句话摘要" },
+  { key: "book_setting", label: "帮灌设定", hint: "找设定空洞,给 3-5 条可落地的设定补全点子" },
+  { key: "book_first", label: "帮写第一章", hint: "第一章起步方案:开场/人物/冲突/钩子 + 2-3 个开篇方向" },
+];
 
 export default function BookWorkspace({
   pid,
@@ -35,7 +58,13 @@ export default function BookWorkspace({
 }) {
   const [book, setBook] = useState<Book | null>(null);
   const [counts, setCounts] = useState<Record<string, Record<string, number>>>({});
-  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("info");
+  const [centerMode, setCenterMode] = useState<"chat" | "task">("chat");
+  const [taskPanel, setTaskPanel] = useState<"workbench" | "review">("workbench");
+  const [leftPanel, setLeftPanel] = useState<(typeof LEFT_PANELS)[number]["key"]>("outline");
+  const [rightPanel, setRightPanel] = useState<(typeof RIGHT_PANELS)[number]["key"]>("graphs");
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
+  const [linksTarget, setLinksTarget] = useState<{ etype: string; id: string; title: string } | null>(null);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
@@ -79,93 +108,163 @@ export default function BookWorkspace({
   const confirmed = (cat: string) => counts[cat]?.confirmed ?? 0;
   const proposals = (cat: string) => counts[cat]?.proposal ?? 0;
 
+  // 大纲树里"去工作台/终审台"的跳转 → 中央切任务台(面板宿主路由,不硬编码互调)
+  const goTask = (t: "workbench" | "review") => { setTaskPanel(t); setCenterMode("task"); };
+
+  // B3 互链枢纽(执行书 §3):各版块 🔗 按钮 → 抽屉;抽屉内点条目 → 宿主路由到所在版块
+  const showLinks = (etype: string, id: string, title: string) => setLinksTarget({ etype, id, title });
+  const jumpEntity = (etype: string, id: string, title: string) => {
+    if (etype === "outline_node" || etype === "l1_entry") {
+      setLeftPanel(etype === "outline_node" ? "outline" : "l1");
+      setLeftOpen(true);
+    } else {
+      setRightPanel(etype === "timeline_event" ? "timeline" : "graphs");
+      setRightOpen(true);
+    }
+    setLinksTarget({ etype, id, title });
+  };
+
   return (
-    <div>
-      <div className="row spread">
-        <button onClick={onBack}>← 返回书架</button>
-        <span className="muted small">F0 向导信息 · 第 2 周建书范围</span>
+    <div className="book3-wrap">
+      <div className="book3-head">
+        <button onClick={onBack}>← 书架</button>
+        <b>{book.name}</b>
+        <span className="muted small">
+          {[book.genre, book.audience, ...(book.tropes ?? [])].filter(Boolean).join(" · ")}
+        </span>
+        <span className="row" style={{ margin: 0 }}>
+          <button className={centerMode === "chat" ? "active" : ""}
+            onClick={() => setCenterMode("chat")}>💬 对话台</button>
+          <button className={centerMode === "task" ? "active" : ""}
+            onClick={() => setCenterMode("task")}>⚒ 任务台</button>
+          {centerMode === "task" && TASK_PANELS.map((t) => (
+            <button key={t.key} className={`link ${taskPanel === t.key ? "" : "muted"}`}
+              onClick={() => setTaskPanel(t.key)}>{t.label}</button>
+          ))}
+        </span>
+        <span className="row" style={{ margin: "0 0 0 auto" }}>
+          <button title="收起/展开左栏" onClick={() => setLeftOpen(!leftOpen)}>{leftOpen ? "⟨ 收左栏" : "⟩ 展左栏"}</button>
+          <button title="收起/展开右栏" onClick={() => setRightOpen(!rightOpen)}>{rightOpen ? "收右栏 ⟩" : "展右栏 ⟩"}</button>
+        </span>
       </div>
-      <h2>{book.name}</h2>
-      <p className="muted small">
-        {[book.genre, book.audience, ...(book.tropes ?? []), ...(book.style ?? [])]
-          .filter(Boolean).join(" · ") || "尚未填写类型与风格"}
-      </p>
 
-      <nav className="subnav">
-        {TABS.map((t) => (
-          <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
-            {t.label}
-            {t.key === "l1" && Object.values(counts).some((c) => (c.proposal ?? 0) > 0) && (
-              <span className="badge warn">有提案</span>
-            )}
-          </button>
-        ))}
-      </nav>
-
-      <div className="workspace-section">
-        {msg && <p className="ok">{msg}</p>}
-        {tab === "info" && (
-          <div>
-            {editing ? (
-              <BookEdit book={book} onSaved={() => { setEditing(false); load(); }} onCancel={() => setEditing(false)} />
-            ) : (
-              <>
-                <dl className="info-grid">
-                  <div><dt>主角</dt><dd>{book.protagonist || "—"}</dd></div>
-                  <div><dt>类型</dt><dd>{book.genre || "—"}</dd></div>
-                  <div><dt>受众</dt><dd>{book.audience || "—"}</dd></div>
-                  <div><dt>情节结构</dt><dd>{book.plot_mode || "—"}</dd></div>
-                  <div><dt>力量体系预设</dt><dd>{book.power_preset || "—"}</dd></div>
-                  <div><dt>金手指预设</dt><dd>{book.cheat_preset || "—"}</dd></div>
-                  <div><dt>每章字数</dt><dd>{book.chapter_words ?? "—"}</dd></div>
-                  <div><dt>目标总字数</dt><dd>{book.target_words ?? "—"}</dd></div>
-                </dl>
-                {book.core_conflict && <p><b>核心冲突:</b>{book.core_conflict}</p>}
-                {book.description && <p><b>简介:</b>{book.description}</p>}
-                <button onClick={() => setEditing(true)}>编辑向导信息</button>
-              </>
-            )}
-            <div className="stat-strip">
-              <span>正式档案:{Object.values(counts).reduce((a, c) => a + (c.confirmed ?? 0), 0)} 条</span>
-              <span>待批准提案:{Object.values(counts).reduce((a, c) => a + (c.proposal ?? 0), 0)} 条</span>
-            </div>
-            <div className="row">
-              <span className="muted small">单本书默认技能(优先级:单本书 &gt; 全局 &gt; 不启用):</span>
-              <select
-                value={skillCfg?.override === null || skillCfg === null ? FOLLOW_GLOBAL : skillCfg.override}
-                onChange={(e) => setBookSkill(e.target.value)}
-              >
-                <option value={FOLLOW_GLOBAL}>
-                  跟随全局{skillCfg?.global ? `(当前:${skillName(skillCfg.global)})` : "(当前:不启用)"}
-                </option>
-                <option value="">不启用</option>
-                {skills.map((s) => (
-                  <option key={s.key} value={s.key}>{s.name}</option>
-                ))}
-              </select>
-              <span className="muted small">
-                当前生效:{skillCfg ? (skillCfg.effective ? skillName(skillCfg.effective) : "不启用") : "…"}
-                {skillCfg?.override != null && "(本书覆盖)"}
-              </span>
-            </div>
-            <p className="muted small">
-              L1 各类:{" "}
-              {["worldview", "character", "power", "faction", "map", "item_economy"].map((c) =>
-                `${{ worldview: "世界观", character: "角色", power: "力量体系", faction: "势力阵营", map: "地图", item_economy: "物品经济" }[c]} ${confirmed(c)}(+${proposals(c)}提案)`
-              ).join(" / ")}
-            </p>
+      <div className={`book3 ${leftOpen ? "" : "no-left"} ${rightOpen ? "" : "no-right"}`}>
+        <aside className="book3-col left">
+          <div className="col-switch">
+            {LEFT_PANELS.map((t) => (
+              <button key={t.key} className={leftPanel === t.key ? "active" : ""}
+                onClick={() => setLeftPanel(t.key)}>{t.label}</button>
+            ))}
           </div>
-        )}
-        {tab === "l1" && <L1Panel pid={pid} />}
-        {tab === "outline" && <OutlinePanel pid={pid} onGoPanel={(t) => setTab(t)} />}
-        {tab === "workbench" && <WorkbenchPanel pid={pid} />}
-        {tab === "review" && <ReviewPanel pid={pid} />}
-        {tab === "dashboard" && <DashboardPanel pid={pid} />}
-        {tab === "timeline" && <TimelinePanel pid={pid} />}
-        {tab === "graphs" && <GraphCenterPanel pid={pid} />}
-        {tab === "l2board" && <L2BoardPanel pid={pid} />}
-        {tab === "chaishu" && <ChaishuPanel pid={pid} />}
+          <div className="col-body">
+            {msg && <p className="ok">{msg}</p>}
+            {leftPanel === "outline" && <OutlinePanel pid={pid} onGoPanel={goTask} onShowLinks={showLinks} />}
+            {leftPanel === "l1" && <L1Panel pid={pid} onShowLinks={showLinks} />}
+            {leftPanel === "info" && (
+              <div>
+                {editing ? (
+                  <BookEdit book={book} onSaved={() => { setEditing(false); load(); }} onCancel={() => setEditing(false)} />
+                ) : (
+                  <>
+                    <dl className="info-grid">
+                      <div><dt>主角</dt><dd>{book.protagonist || "—"}</dd></div>
+                      <div><dt>类型</dt><dd>{book.genre || "—"}</dd></div>
+                      <div><dt>受众</dt><dd>{book.audience || "—"}</dd></div>
+                      <div><dt>情节结构</dt><dd>{book.plot_mode || "—"}</dd></div>
+                      <div><dt>力量体系预设</dt><dd>{book.power_preset || "—"}</dd></div>
+                      <div><dt>金手指预设</dt><dd>{book.cheat_preset || "—"}</dd></div>
+                      <div><dt>每章字数</dt><dd>{book.chapter_words ?? "—"}</dd></div>
+                      <div><dt>目标总字数</dt><dd>{book.target_words ?? "—"}</dd></div>
+                    </dl>
+                    {book.core_conflict && <p><b>核心冲突:</b>{book.core_conflict}</p>}
+                    {book.description && <p><b>简介:</b>{book.description}</p>}
+                    <button onClick={() => setEditing(true)}>编辑向导信息</button>
+                  </>
+                )}
+                <div className="stat-strip">
+                  <span>正式档案:{Object.values(counts).reduce((a, c) => a + (c.confirmed ?? 0), 0)} 条</span>
+                  <span>待批准提案:{Object.values(counts).reduce((a, c) => a + (c.proposal ?? 0), 0)} 条</span>
+                </div>
+                <div className="row">
+                  <span className="muted small">单本书默认技能(优先级:单本书 &gt; 全局 &gt; 不启用):</span>
+                  <select
+                    value={skillCfg?.override === null || skillCfg === null ? FOLLOW_GLOBAL : skillCfg.override}
+                    onChange={(e) => setBookSkill(e.target.value)}
+                  >
+                    <option value={FOLLOW_GLOBAL}>
+                      跟随全局{skillCfg?.global ? `(当前:${skillName(skillCfg.global)})` : "(当前:不启用)"}
+                    </option>
+                    <option value="">不启用</option>
+                    {skills.map((s) => (
+                      <option key={s.key} value={s.key}>{s.name}</option>
+                    ))}
+                  </select>
+                  <span className="muted small">
+                    当前生效:{skillCfg ? (skillCfg.effective ? skillName(skillCfg.effective) : "不启用") : "…"}
+                    {skillCfg?.override != null && "(本书覆盖)"}
+                  </span>
+                </div>
+                <p className="muted small">
+                  L1 各类:{" "}
+                  {["worldview", "character", "power", "faction", "map", "item_economy"].map((c) =>
+                    `${{ worldview: "世界观", character: "角色", power: "力量体系", faction: "势力阵营", map: "地图", item_economy: "物品经济" }[c]} ${confirmed(c)}(+${proposals(c)}提案)`
+                  ).join(" / ")}
+                </p>
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <section className="book3-center">
+          {centerMode === "chat" ? (
+            <div className="col-body">
+              <ChatPanel
+                projectId={pid}
+                ownerType="book"
+                ownerId={pid}
+                defaultSessionName="书级对话"
+                allowPresets
+                presets={BOOK_PRESETS}
+                allowSkill
+                allowRefs
+                emptyHint="书级对话:上下文 = 书信息 + 大纲概要 + 近期章节 + L1 常驻。可闲聊可出建议块,建议逐条走采纳闸门;新书写完向导,先点下方方向卡起步。"
+              />
+            </div>
+          ) : (
+            <div className="col-body">
+              {taskPanel === "workbench" && <WorkbenchPanel pid={pid} />}
+              {taskPanel === "review" && <ReviewPanel pid={pid} />}
+            </div>
+          )}
+        </section>
+
+        <aside className="book3-col right">
+          <div className="col-switch">
+            {RIGHT_PANELS.map((t) => (
+              <button key={t.key} className={rightPanel === t.key ? "active" : ""}
+                onClick={() => setRightPanel(t.key)}>{t.label}</button>
+            ))}
+          </div>
+          <div className="col-body">
+            {rightPanel === "graphs" && <GraphCenterPanel pid={pid} onShowLinks={showLinks} />}
+            {rightPanel === "dashboard" && <DashboardPanel pid={pid} />}
+            {rightPanel === "timeline" && <TimelinePanel pid={pid} onShowLinks={showLinks} />}
+            {rightPanel === "l2board" && <L2BoardPanel pid={pid} />}
+            {rightPanel === "chaishu" && <ChaishuPanel pid={pid} />}
+          </div>
+        </aside>
       </div>
+
+      {linksTarget && (
+        <EntityDrawer
+          pid={pid}
+          etype={linksTarget.etype}
+          id={linksTarget.id}
+          title={linksTarget.title}
+          onClose={() => setLinksTarget(null)}
+          onJump={jumpEntity}
+        />
+      )}
     </div>
   );
 }

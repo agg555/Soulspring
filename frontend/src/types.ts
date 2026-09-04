@@ -212,7 +212,7 @@ export interface LlmSettings {
 }
 
 export interface PriceEntry {
-  model: string;
+  model?: string; // models 组必填;default/standard 组无 model(后端 Optional 同构)
   input_per_m: number;
   output_per_m: number;
 }
@@ -220,6 +220,8 @@ export interface PriceEntry {
 export interface PricingSettings {
   default: PriceEntry;
   models: PriceEntry[];
+  standard?: PriceEntry | null;   // 正价(折扣截止日过期自动启用,2026-09-03)
+  discount_until?: string | null; // 折扣最后有效日 YYYY-MM-DD(含当天)
 }
 
 export interface BudgetSettings {
@@ -345,7 +347,7 @@ export interface Suggestion {
   issue: string;
   suggestion: string;
   severity: string;
-  target_type: string;   // none | chapter_text | outline_field | event_field | relation_field
+  target_type: string;   // none | chapter_text | outline_field | event_field | graph_field | graph_add
   target: SuggestionTarget;
   adopted?: boolean;
   adopted_at?: string;
@@ -498,6 +500,7 @@ export interface GraphNode {
   x: number;
   y: number;
   style: Record<string, unknown>;
+  category?: string | null;   // 实体类型标注(l1 类别/事件/自由;体感三桶 2026-09-04)
 }
 
 export interface GraphEdge {
@@ -507,4 +510,17 @@ export interface GraphEdge {
   to_node_id: string;
   label: string;
   kind: string;
+}
+
+// B3 实体互链(骨架批执行书 §3)
+export interface EntityLinkItem {
+  etype?: string;
+  id: string;
+  title: string;
+  extra?: string | null;
+}
+export interface EntityLinks {
+  etype: string;
+  id: string;
+  groups: { kind: string; items: EntityLinkItem[] }[];
 }

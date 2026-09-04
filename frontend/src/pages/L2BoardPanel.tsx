@@ -83,9 +83,12 @@ export default function L2BoardPanel({ pid }: { pid: string }) {
       {error && <p className="error">{error}</p>}
 
       <h3>回写草案审核(F9 · 写入协议:机器起草,人批准才入账)</h3>
+      <p className="muted small">
+        草案是全书真相文件的下一版(每次起草覆盖上一版,不按章分存);定稿任一章自动以该章正文起草,或选章手动触发。
+      </p>
       <div className="row">
         <select value={redraftNid} onChange={(e) => setRedraftNid(e.target.value)}>
-          <option value="">(选已定稿章)</option>
+          <option value="">(选章:手动重新起草的参考章)</option>
           {finalChapters.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
         </select>
         <button onClick={redraft} disabled={!!busy || !redraftNid}>重新起草 L2 diff</button>

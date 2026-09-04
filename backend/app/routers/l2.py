@@ -61,7 +61,7 @@ def draft_l2_internal(project_id: str, node_id: str, text: str) -> dict:
     r = chat_completion(
         [{"role": "system", "content": prompt},
          {"role": "user", "content": "请输出真相文件变更 JSON。"}],
-        action="l2_rewrite_draft", project_id=project_id, agent_type="observer",
+        action="l2_rewrite_draft", project_id=project_id, node_id=node_id, agent_type="observer",
         input_summary="L2回写起草", max_tokens_override=6000)
     raw = r["content"].strip()
     if raw.startswith("```"):

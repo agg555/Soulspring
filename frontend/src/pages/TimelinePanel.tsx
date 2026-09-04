@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { Suggestion, TimelineEvent } from "../types";
 import ChatPanel from "../components/ChatPanel";
+import { uiConfirm } from "../components/uiConfirm";
 
 /**
  * 剧情时间线(第三批 C + E,任务词 2026-09-01):
@@ -13,7 +14,10 @@ import ChatPanel from "../components/ChatPanel";
  */
 const FILTERS = ["全部", "主线", "支线", "已定", "未定"] as const;
 
-export default function TimelinePanel({ pid }: { pid: string }) {
+export default function TimelinePanel({ pid, onShowLinks }: {
+  pid: string;
+  onShowLinks?: (etype: string, nid: string, title: string) => void;   // B3 互链
+}) {
   const [events, setEvents] = useState<TimelineEvent[] | null>(null);
   const [view, setView] = useState<"axis" | "cards">("axis");
   const [filter, setFilter] = useState<string>("全部");
@@ -77,7 +81,7 @@ export default function TimelinePanel({ pid }: { pid: string }) {
   };
 
   const removeEvent = async (eid: string) => {
-    if (!confirm("删除该事件(关联记录一并清)?")) return;
+    if (!(await uiConfirm("删除该事件(关联记录一并清)?"))) return;
     try {
       await api.deleteTimelineEvent(eid);
       setOpenEvt(null);
@@ -200,7 +204,15 @@ export default function TimelinePanel({ pid }: { pid: string }) {
           <div className="tl-side">
             <div className="row spread">
               <b>事件详情</b>
-              <button className="link" onClick={() => setOpenEvt(null)}>关闭 ×</button>
+              <span className="row" style={{ margin: 0 }}>
+                {onShowLinks && (
+                  <button className="link"
+                    onClick={() => onShowLinks("timeline_event", openEvt.id, openEvt.title)}>
+                    🔗 关联
+                  </button>
+                )}
+                <button className="link" onClick={() => setOpenEvt(null)}>关闭 ×</button>
+              </span>
             </div>
             <div className="form">
               <label>事件名

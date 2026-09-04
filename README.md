@@ -15,7 +15,7 @@ AGPL-3.0,全文见 [LICENSE](LICENSE)。
 
 | 目录 | 内容 |
 |---|---|
-| `backend\` | FastAPI 服务:装配引擎 / 双层审计(代码层 + anti-AI)/ 写章工作台(后台任务化生成管道)/ 统一对话(会话 + 建议协议两档采纳)/ 统一图谱引擎 / 驾驶舱聚合 / 拆书 / 预算记账 |
+| `backend\` | FastAPI 服务:装配引擎 / 双层审计(代码层 + anti-AI)/ 写章工作台(后台任务化生成管道)/ 统一对话(会话 + 建议协议两档采纳)/ 统一图谱引擎 / 三栏书工作区(书级对话+实体互链)/ 书况台聚合 / 拆书 / 预算记账 |
 | `frontend\` | React + Vite 薄前端(构建产物由后端静态托管) |
 | `prompts\` | 提示词资产(技能 SKILL.md + 章节管道模板) |
 | `scripts\` | 启动脚本(Windows) |
@@ -29,5 +29,5 @@ AGPL-3.0,全文见 [LICENSE](LICENSE)。
 
 ```bash
 cd backend
-.venv\Scripts\python.exe -m pytest tests/ -q   # 54 全绿
+.venv\Scripts\python.exe -m pytest tests/ -q   # 60 全绿
 ```

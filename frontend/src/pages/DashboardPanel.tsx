@@ -4,7 +4,8 @@ import { STAGE_LABELS } from "../stages";
 import type { DashboardRow, ProductionEvent } from "../types";
 
 /**
- * 全书驾驶舱(第三批 B1/B2/B4,执行书原第三批 + 任务词 2026-09-01):
+ * 书况台(原"驾驶舱",体感三桶 2026-09-04 拍板改名;第三批 B1/B2/B4,执行书原第三批
+ * + 任务词 2026-09-01):
  * - B1 每章一行:状态/字数/审计 critical·警告/评审七维/朱雀人工%/累计成本/最近阶段;
  * - B2 点行展开单章生产时间线(装配→草稿→审计→人改→终审,聚合现成日志表);
  * - B4 质量分 = 加权和(critical 一票否决仅展示),权重页内可调、改后重算生效;
@@ -56,7 +57,7 @@ export default function DashboardPanel({ pid }: { pid: string }) {
 
   return (
     <div>
-      <h3 style={{ marginTop: 0 }}>全书驾驶舱(B1 · 每章一行)</h3>
+      <h3 style={{ marginTop: 0 }}>全书书况(B1 · 每章一行)</h3>
       <p className="muted small">
         数值与各面板同源聚合;点行展开 B2 单章生产时间线;质量分为展示留痕,不改任何闸门。
       </p>

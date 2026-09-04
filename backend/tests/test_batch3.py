@@ -58,11 +58,14 @@ def test_put_patch_word_count_sources(tmp_db):
 
 def test_word_stats_aggregation(tmp_db):
     """word-stats:今日人工/AI 分列;chapter 维度聚合。"""
+    from datetime import datetime, timezone
+
     from app.db import tx
     from app.routers.dashboard import word_stats
+    # 今日桶断言要求落库时间在"今天":用当前 UTC 日期动态生成,跨天不碎
+    now = datetime.now(timezone.utc).replace(hour=10, minute=0, second=0, microsecond=0).isoformat()
     with tx() as conn:
         _seed_chapter_with_cs(conn)
-        now = "2026-09-01T10:00:00+00:00"
         for src, delta in (("human", 100), ("human", -20), ("ai", 500)):
             conn.execute(
                 "INSERT INTO word_count_log(id, project_id, node_id, source, delta,"

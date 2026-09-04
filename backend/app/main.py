@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from .db import migrate
 from .routers import (
     adopt, books, branches, build, chaishu, conversations, dashboard, graphs, l1, l2,
-    overview, outline, review, settings_api, usage_api, workbench,
+    links, overview, outline, review, settings_api, usage_api, workbench,
 )
 
 app = FastAPI(title="Soulspring", version="0.1.0")
@@ -30,6 +30,7 @@ app.add_middleware(
 
 app.include_router(overview.router)
 app.include_router(books.router)
+app.include_router(links.router)
 app.include_router(l1.router)
 app.include_router(outline.router)
 app.include_router(workbench.router)

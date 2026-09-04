@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import math
 import uuid
 
 from fastapi import APIRouter, HTTPException
@@ -36,6 +37,7 @@ class AdoptIn(BaseModel):
     session_id: str
     message_id: str
     index: int
+    anchor: dict | None = None  # 速赢 2.1:图谱新增落位锚 {x,y}(前端画布坐标),可空
 
 
 @router.post("/suggestions/adopt")
@@ -68,7 +70,7 @@ def adopt_suggestion(body: AdoptIn) -> dict:
     elif target_type == "graph_field":
         result = _adopt_graph_field(sug, target)
     elif target_type == "graph_add":
-        result = _adopt_graph_add(sug, target)
+        result = _adopt_graph_add(sug, target, anchor=body.anchor)
     else:
         raise HTTPException(422, "该建议没有可落地的目标(大纲字段/正文/事件/图谱对象可采纳)")
 
@@ -213,7 +215,7 @@ def _adopt_graph_field(sug: dict, target: dict) -> dict:
     raise HTTPException(422, "graph_field 建议缺少 node_id/edge_id")
 
 
-def _adopt_graph_add(sug: dict, target: dict) -> dict:
+def _adopt_graph_add(sug: dict, target: dict, anchor: dict | None = None) -> dict:
     """图谱新增采纳(批准闸门:前端预览弹窗人已确认):建节点或连线。"""
     board_id = target.get("board_id")
     item = target.get("item") or {}
@@ -226,17 +228,40 @@ def _adopt_graph_add(sug: dict, target: dict) -> dict:
             label = str(item.get("label") or "").strip()
             if not label:
                 raise HTTPException(422, "建议新增节点缺少 label")
-            # 网格空位排布(找不重叠的格)
-            used = {(round(n["x"]), round(n["y"])) for n in conn.execute(
-                "SELECT x, y FROM graph_nodes WHERE board_id=?", (board_id,)).fetchall()}
-            spot, idx = None, 0
-            while spot is None:
-                x, y = 80 + (idx % 4) * 190, 60 + (idx // 4) * 110
-                if (x, y) not in used:
-                    spot = (x, y)
-                idx += 1
-                if idx > 200:
-                    spot = (x, y)
+            # 空位排布(速赢 2.1,2026-09-03):优先以采纳锚(边中点/源节点)为心
+            # 环绕找与现有节点保持间距的格;无锚或环绕失败再退回左上全局网格(旧行为)。
+            used = [(n["x"], n["y"]) for n in conn.execute(
+                "SELECT x, y FROM graph_nodes WHERE board_id=?", (board_id,)).fetchall()]
+            spot = None
+            if anchor:
+                try:
+                    ax, ay = float(anchor["x"]), float(anchor["y"])
+                except (KeyError, TypeError, ValueError):
+                    ax = None
+                if ax is not None:
+                    # 以锚为心,半径递增、每圈 12 方向,取第一个与所有节点间距 ≥90 的 10px 格点
+                    for radius in (120, 190, 260, 330):
+                        for k in range(12):
+                            ang = 2 * math.pi * k / 12
+                            cand = (round((ax + radius * math.cos(ang)) / 10) * 10,
+                                    round((ay + radius * math.sin(ang)) / 10) * 10)
+                            if all((cand[0] - ux) ** 2 + (cand[1] - uy) ** 2 >= 90 ** 2
+                                   for ux, uy in used):
+                                spot = cand
+                                break
+                        if spot:
+                            break
+            if spot is None:
+                # 退回全局网格(旧行为):左上起第一个不重叠格
+                used_set = {(round(ux), round(uy)) for ux, uy in used}
+                idx = 0
+                while spot is None:
+                    x, y = 80 + (idx % 4) * 190, 60 + (idx // 4) * 110
+                    if (x, y) not in used_set:
+                        spot = (x, y)
+                    idx += 1
+                    if idx > 200:
+                        spot = (x, y)
             nid = f"gn_{uuid.uuid4().hex[:20]}"
             conn.execute(
                 "INSERT INTO graph_nodes(id, board_id, ref_type, ref_id, label, sub_label,"

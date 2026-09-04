@@ -5,7 +5,10 @@ import type { L1Category, L1Entry, L1Schema } from "../types";
 const STYLE_NOTE =
   "风格指纹是 L1 特殊区:唯一写入者是文风蒸馏管道(M5 上线),此处只读展示。";
 
-export default function L1Panel({ pid }: { pid: string }) {
+export default function L1Panel({ pid, onShowLinks }: {
+  pid: string;
+  onShowLinks?: (etype: string, nid: string, title: string) => void;   // B3 互链
+}) {
   const [schema, setSchema] = useState<L1Schema | null>(null);
   const [entries, setEntries] = useState<L1Entry[]>([]);
   const [cat, setCat] = useState<string>("");
@@ -237,11 +240,18 @@ export default function L1Panel({ pid }: { pid: string }) {
           <li key={e.id} className={e.entry_status === "proposal" ? "entry proposal" : "entry"}>
             <div className="entry-head">
               <b>{e.name}</b>
-              {e.entry_status === "proposal" ? (
-                <span className="badge warn">AI 提案 · 待批准</span>
-              ) : (
-                <span className="badge ok">正式</span>
-              )}
+              <span className="row" style={{ margin: 0 }}>
+                {onShowLinks && (
+                  <button className="link" onClick={() => onShowLinks("l1_entry", e.id, e.name)}>
+                    🔗 关联
+                  </button>
+                )}
+                {e.entry_status === "proposal" ? (
+                  <span className="badge warn">AI 提案 · 待批准</span>
+                ) : (
+                  <span className="badge ok">正式</span>
+                )}
+              </span>
             </div>
             <dl className="entry-fields">
               {Object.entries(e.fields).map(([k, v]) => {

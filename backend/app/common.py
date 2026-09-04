@@ -57,3 +57,11 @@ def _load_skill_body(key: str) -> str:
         raise HTTPException(404, f"技能不存在:{key}")
     _, body = _parse_frontmatter(f.read_text(encoding="utf-8"))
     return body
+
+
+def skill_section(skill: str | None) -> str:
+    """生成处选技能(2026-08-31 需求稿):技能正文拼进提示词上下文;
+    实跑 2026-09-02 由 generation._skill_section 上移公共——装配预览同口径使用。"""
+    if not skill:
+        return ""
+    return f"## 启用技能:{skill}\n\n{_load_skill_body(skill)}"

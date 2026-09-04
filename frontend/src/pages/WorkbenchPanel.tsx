@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { STAGE_LABELS } from "../stages";
+import { uiConfirm } from "../components/uiConfirm";
 import type {
   ChangesetView, GenTask, OutlineNode, PatchRow, SkillInfo, WordStats, WorkbenchPreview,
 } from "../types";
@@ -172,7 +173,7 @@ export default function WorkbenchPanel({ pid }: { pid: string }) {
 
   const rollback = async (p: PatchRow) => {
     if (!nid) return;
-    if (!confirm(`回滚到 v${p.version}(${p.reason})?将以此版内容追加一个新版本,历史版本全部保留。`)) return;
+    if (!(await uiConfirm(`回滚到 v${p.version}(${p.reason})?将以此版内容追加一个新版本,历史版本全部保留。`))) return;
     setBusy("回滚中…");
     setError("");
     try {
@@ -243,6 +244,9 @@ export default function WorkbenchPanel({ pid }: { pid: string }) {
         <>
           <h3>装配预览(F4)</h3>
           <p className="muted small">
+            数字含当前生效技能的注入体积(技能不受上限裁剪);在下方临时手选其他技能时,以生成时实际为准。
+          </p>
+          <p className="muted small">
             {preview.assembly.total_chars} / {preview.assembly.limit_chars} 字符
             {preview.assembly.trimmed && "(超限,已按需裁剪)"}
             <button className="link" onClick={() => setShowAssembly(!showAssembly)}>
@@ -302,7 +306,13 @@ export default function WorkbenchPanel({ pid }: { pid: string }) {
                 {cs.validations.length === 0 && <li className="muted">九类检查全部通过,零 token。</li>}
               </ul>
 
-              {cs.review && (
+              {cs.review && (cs.review as { review_error?: string }).review_error && (
+                <>
+                  <h3>LLM 评审(F6 · 第二道闸)</h3>
+                  <p className="badge warn">评审调用失败:{(cs.review as { review_error?: string }).review_error}(advisory 不阻塞;可重 roll 重新生成并评审)</p>
+                </>
+              )}
+              {cs.review && !(cs.review as { review_error?: string }).review_error && (
                 <>
                   <h3>LLM 评审(F6 · 第二道闸)</h3>
                   <p className="small">

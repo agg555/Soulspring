@@ -18,7 +18,7 @@ import uuid
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..assembly import OUTLINE_KIND_LABEL, build_node_context
+from ..assembly import OUTLINE_KIND_LABEL, build_book_context, build_node_context
 from ..audit.world_state import load_world_state
 from ..common import EDGE_KINDS, EVENT_FIELDS, _load_skill_body, _now, _parse_frontmatter
 from ..db import tx
@@ -48,13 +48,12 @@ REPLY_PROTOCOL = """## 回复格式协议(必须遵守)
 建议数组每项格式:
 {"quote": "引用的原文或现状(可空)", "issue": "问题是什么", "suggestion": "怎么改",
  "severity": "minor 或 major 或 critical",
- "target_type": "none 或 chapter_text 或 outline_field 或 event_field 或 relation_field",
+ "target_type": "none 或 chapter_text 或 outline_field 或 event_field",
  "target": {...}}
 
 - target_type="chapter_text":target={"node_id": "章节点 id", "revised_text": "按建议改写后的完整段落或全文,可直接替换原文"}
 - target_type="outline_field":target={"node_id": "节点 id", "field": "title 或 summary 或 note", "value": "建议的新字段值"}
 - target_type="event_field"(剧情时间线事件):target={"event_id": "事件 id", "field": "time_label 或 title 或 summary 或 line 或 status", "value": "建议的新值"}
-- target_type="relation_field"(角色关系):target={"relation_id": "关系 id", "field": "relation 或 kind", "value": "建议的新值"}
 - target_type="graph_field"(图谱节点/连线):target={"node_id" 或 "edge_id": "对象 id", "field": "label 或 sub_label(节点)/ label 或 kind(连线)", "value": "建议的新值"}
 - target_type="graph_add"(建议新增图谱对象,人确认才落库):target={"board_id": "板 id", "item": {"type": "node", "label": "...", "sub_label": "..."} 或 {"type": "edge", "from_node_id": "...", "to_node_id": "...", "label": "...", "kind": "..."}}
 - 无可落地的具体修改时 target_type 用 "none",target 传 {};没有建议时 suggestions 给 []
@@ -66,10 +65,10 @@ OWNER_ACTIONS = {
     "outline_node": "outline_chat",
     "branch": "outline_chat",
     "timeline_event": "outline_chat",
-    "relation": "outline_chat",
     "graph_node": "outline_chat",
     "graph_edge": "outline_chat",
     "graph_board": "outline_chat",
+    "book": "book_chat",
 }
 AGENT_TYPES = {
     "review": "reviewer",
@@ -77,14 +76,17 @@ AGENT_TYPES = {
     "outline_node": "planner",
     "branch": "planner",
     "timeline_event": "planner",
-    "relation": "planner",
     "graph_node": "planner",
     "graph_edge": "planner",
     "graph_board": "planner",
+    "book": "planner",
 }
 VALID_OWNER_TYPES = {"review", "chat_test", "outline_node", "branch",
-                     "timeline_event", "relation",
-                     "graph_node", "graph_edge", "graph_board"}
+                     "timeline_event",
+                     "graph_node", "graph_edge", "graph_board",
+                     "book"}
+# relation 会话类型已下线(2026-09-02 拍板):唯一 UI 入口 RelationGraphPanel 随 S10(a)
+# 删除,relation_field 采纳分支同步下线;旧会话行留库只作历史,不再可建新线。
 # C3 两个预设模式(执行书拍板:优化=针对节点给改法;奇思妙想=发散 3-5 个方向)
 PRESET_PROMPTS = {
     "optimize": (
@@ -101,6 +103,26 @@ PRESET_PROMPTS = {
         "suggestion=创意描述 + 为何在这个位置成立(结合上下文)+ 风险与代价;"
         "severity 按大胆程度自定;target_type 用 \"none\"(点子只供人挑选,不直接落库)。"
         "数量严格在 3-5 条之间,宁缺毋滥,不得换皮重复。"
+    ),
+    # 书级起步方向卡(骨架批执行书 §2 拍板:帮铺大纲/帮灌设定/帮写第一章)
+    "book_outline": (
+        "## 当前任务:帮铺大纲\n"
+        "基于本书信息与下方大纲概要,给出或补全整体大纲结构:卷/近纲/章的层级划分、"
+        "每部分一句话摘要。对已有节点的修改落 outline_field 建议(target={node_id, field, value},"
+        "node_id 用大纲概要里的 id 原文);结构性新增(建卷/建章)写在 reply 里供作者确认,"
+        "不要编造 node_id。"
+    ),
+    "book_setting": (
+        "## 当前任务:帮灌设定\n"
+        "围绕本书世界观与档案缺口做发散:指出大纲概要/近期章节暴露出的设定空洞,给出 3-5 条"
+        "可落地的设定补全点子(力量体系/势力/地理/物品经济等)。每条 issue=一句话标题,"
+        "suggestion=设定内容+为何成立+对主线的影响;target_type 用 \"none\",只供人挑选。"
+    ),
+    "book_first": (
+        "## 当前任务:帮写第一章\n"
+        "结合大纲概要里第一章的位置,给出第一章写作起步方案:开场场景、出场人物、核心冲突、"
+        "钩子收尾(各一小段),并给 2-3 个风格不同的开篇方向供作者挑选;"
+        "target_type 用 \"none\"。"
     ),
 }
 
@@ -381,39 +403,6 @@ def _context_timeline_event(session: dict, body: MessageIn) -> list[str]:
     return parts
 
 
-def _context_relation(session: dict, body: MessageIn) -> list[str]:
-    """第三批 E:关系级对话 = 两张角色卡摘要 + 关系字段。"""
-    parts: list[str] = []
-    with tx() as conn:
-        rrow = conn.execute(
-            "SELECT * FROM character_relations WHERE id=?", (session["owner_id"],)).fetchone()
-        if rrow is None:
-            parts.append("(关系已被删除)")
-        else:
-            rel = dict(rrow)
-            rel.pop("created_at", None)
-            for side in ("from_entry_id", "to_entry_id"):
-                card = conn.execute(
-                    "SELECT name, content FROM l1_entries WHERE id=?",
-                    (rel[side],)).fetchone()
-                if card:
-                    parts.append(
-                        f"### 角色卡({side.split('_')[0]}):{card['name']}\n"
-                        + (card["content"] or "")[:800])
-                else:
-                    parts.append(f"### 角色卡({side.split('_')[0]}):(已删除)")
-            parts.append("## 当前角色关系(你的建议针对这条关系)\n"
-                         + json.dumps({k: rel[k] for k in
-                                       ("relation", "kind", "from_entry_id", "to_entry_id")},
-                                      ensure_ascii=False, indent=1))
-    parts.extend(_preset_part(
-        body,
-        "## 当前任务:自由对话\n"
-        "围绕该关系讨论其剧情用法;关系字段(relation/kind)的改法"
-        "用 target_type=\"relation_field\" 的建议输出。"))
-    return parts
-
-
 def _context_graph(session: dict, body: MessageIn) -> list[str]:
     """第四批 D:图谱对象对话——节点(含相连边与邻居卡)/边(两端节点卡)/整板摘要。"""
     parts: list[str] = []
@@ -500,6 +489,22 @@ def _context_graph(session: dict, body: MessageIn) -> list[str]:
     return parts
 
 
+def _context_book(session: dict, body: MessageIn) -> list[str]:
+    """书级对话(骨架批执行书 §2,owner_id=project_id):书信息+大纲概要+近期章节
+    +L1 常驻摘要(build_book_context,6000 上限)。双重性格:既传统问答,也可出
+    结构化建议走采纳闸门——target 沿用现有类型,上下文给足 id。"""
+    parts = [build_book_context(session["owner_id"])]
+    parts.extend(_preset_part(
+        body,
+        "## 当前任务:书级对话\n"
+        "围绕整本书协作:铺大纲/灌设定/推剧情/改字段都行。结构化建议 target 沿用:"
+        "改大纲字段用 outline_field(target={node_id, field, value},node_id 用大纲概要"
+        "里的 id 原文);改图谱对象用 graph_field;改章正文用 chapter_text"
+        "(target={node_id, field:\"content\", value},进写章工作台变更集人审合入);"
+        "新增图谱节点/连线用 graph_add(target={board_id, item})。"))
+    return parts
+
+
 # owner_type → 上下文组装函数表(S5);未知类型走兜底文案(校验已挡,防御保留)
 _CONTEXT_BUILDERS = {
     "review": _context_review,
@@ -507,10 +512,10 @@ _CONTEXT_BUILDERS = {
     "outline_node": _context_outline_node,
     "branch": _context_branch,
     "timeline_event": _context_timeline_event,
-    "relation": _context_relation,
     "graph_node": _context_graph,
     "graph_edge": _context_graph,
     "graph_board": _context_graph,
+    "book": _context_book,
 }
 
 
@@ -558,7 +563,7 @@ def _parse_reply(raw: str) -> tuple[str, list[dict], bool]:
                 "suggestion": str(s.get("suggestion") or ""),
                 "severity": s.get("severity") if s.get("severity") in ("minor", "major", "critical") else "minor",
                 "target_type": tt if tt in ("none", "chapter_text", "outline_field",
-                                            "event_field", "relation_field",
+                                            "event_field",
                                             "graph_field", "graph_add") else "none",
                 "target": s.get("target") if isinstance(s.get("target"), dict) else {},
             })

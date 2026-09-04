@@ -301,3 +301,81 @@ label.row input[type="checkbox"] { flex: none; }
 .graph-menu button, .graph-menu select { width: 100%; font-size: 12px; padding: 4px 8px; }
 .graph-menu .danger-link { color: var(--err); background: none; border: none; cursor: pointer; text-align: left; padding: 4px 8px; font-size: 12px; }
 .hot-anchor { animation: gen-pulse 1.2s ease-in-out infinite; }
+
+/* --- 实跑顺手修:行内确认条(替代原生 confirm/prompt,内嵌面板可用) --- */
+.confirm-bar {
+  position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 200; display: flex; gap: 8px; align-items: center;
+  background: var(--panel); border: 1px solid var(--accent); border-radius: 8px;
+  padding: 8px 12px; max-width: 720px; box-shadow: 0 6px 20px rgba(0,0,0,0.55);
+  font-size: 13px;
+}
+
+/* --- 速赢 2.2:图谱缩放按钮组(右下角浮动) --- */
+.graph-zoombar {
+  position: absolute; right: 14px; bottom: 14px; z-index: 30;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.graph-zoombar button { width: 34px; padding: 4px 0; font-size: 14px; }
+.graph-stage { position: relative; }
+
+/* ── 书工作区三栏骨架(骨架批 2026-09-04,执行书 §1)────────────────── */
+.book3-wrap {
+  width: 100vw;                       /* 全幅 breakout:三栏需要比 .app(880px)更宽 */
+  margin-left: calc(50% - 50vw);
+  padding: 0 16px;
+}
+.book3-head {
+  display: flex; align-items: center; gap: 10px;
+  margin: 10px 0; flex-wrap: wrap;
+}
+.book3-head .row button.link { font-size: 12px; }
+.book3 {
+  display: grid;
+  grid-template-columns: minmax(230px, 300px) minmax(0, 1fr) minmax(280px, 360px);
+  gap: 10px; align-items: stretch;
+  height: calc(100vh - 120px);
+}
+.book3.no-left  { grid-template-columns: 0 minmax(0, 1fr) minmax(280px, 360px); }
+.book3.no-right { grid-template-columns: minmax(230px, 300px) minmax(0, 1fr) 0; }
+.book3.no-left.no-right { grid-template-columns: 0 minmax(0, 1fr) 0; }
+.book3.no-left .book3-col.left, .book3.no-right .book3-col.right { display: none; }
+.book3-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
+.col-switch { display: flex; flex-wrap: wrap; gap: 4px; }
+.col-switch button { padding: 3px 9px; font-size: 12px; border-radius: 6px; }
+.col-body {
+  flex: 1; min-height: 0; overflow: auto;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px;
+}
+.book3-center { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
+.book3-center .col-body { display: flex; flex-direction: column; }
+.book3-center .chat-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; margin: 0; }
+.book3-center .chat-history { flex: 1; max-height: none; }
+
+/* 起步方向卡(书级对话空态) */
+.dir-cards { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.dir-cards button {
+  flex: 1; min-width: 150px; text-align: left; padding: 10px 12px;
+  background: var(--bg); border-radius: 8px; display: flex; flex-direction: column; gap: 4px;
+}
+.dir-cards button.on { border-color: var(--accent); }
+.dir-cards button b { color: var(--accent); }
+
+/* B3 实体互链抽屉(骨架批执行书 §3) */
+.entity-drawer {
+  position: fixed; right: 16px; top: 70px; bottom: 16px;
+  width: min(330px, 92vw); overflow: auto; z-index: 90;
+}
+.entity-link-list { list-style: none; padding-left: 0; margin: 4px 0 12px; }
+.entity-link-list li { padding: 2px 0; }
+
+/* 大纲图谱形态(拍板 2ab,只读) */
+.outline-graph { overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; max-height: calc(100% - 40px); }
+
+/* 三栏窄容器排版修(骨架批实施中发现):按钮文字不竖排,行内工具条收紧 */
+.col-switch button, .col-body button, .tree-actions button { white-space: nowrap; }
+.col-body .row { flex-wrap: wrap; row-gap: 4px; }
+.tree-actions { gap: 2px; font-size: 12px; }
+.tree-actions button { padding: 1px 3px; font-size: 12px; }
+.col-body select { max-width: 100%; }

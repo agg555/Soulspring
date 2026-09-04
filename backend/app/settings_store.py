@@ -28,6 +28,10 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "pricing": {
         "default": {"input_per_m": 0.0, "output_per_m": 0.0},
         "models": [],
+        # 双份价格(2026-09-03 拍板):折扣期存 discount_until(YYYY-MM-DD,含当天),
+        # 过期后 price_for 自动改用 standard(正价)——到期不手工切换也不失真。
+        "standard": None,          # {"input_per_m":..,"output_per_m":..} 正价,可空
+        "discount_until": None,    # 折扣最后有效日(含),可空
     },
     "budget": {
         "per_chapter_alert": 0.25,  # 任务书 §6:单章 AI 成本告警线
@@ -48,6 +52,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
             "chapter_normalize": "low",    # 字数规整
             "chat_test": "low",            # 连通性测试
             "outline_chat": "low",         # 大纲节点对话(执行书:新对话类 action 一律先 low,不够再升)
+            "book_chat": "low",            # 书级对话(骨架批执行书 §2:thinking 先 low)
             # 创作与审美活:要质量 → 深度思考
             "chapter_plan": "max",         # 写章计划卡
             "chapter_draft": "max",        # 章节草稿(用户拍板:写文用 max)

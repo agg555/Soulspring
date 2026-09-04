@@ -42,8 +42,17 @@ def board_detail(bid: str) -> dict:
             "SELECT * FROM graph_nodes WHERE board_id=? ORDER BY created_at", (bid,)).fetchall()]
         edges = [dict(r) for r in conn.execute(
             "SELECT * FROM graph_edges WHERE board_id=? ORDER BY created_at", (bid,)).fetchall()]
+        # 节点实体类型(体感三桶 2026-09-04 拍板 3a):l1 来源带 L1 类别,事件/自由单列
+        ref_ids = [n["ref_id"] for n in nodes if n["ref_type"] == "l1_entry" and n["ref_id"]]
+        cats: dict[str, str] = {}
+        if ref_ids:
+            marks = ",".join("?" * len(ref_ids))
+            cats = {r["id"]: r["category"] for r in conn.execute(
+                f"SELECT id, category FROM l1_entries WHERE id IN ({marks})", ref_ids).fetchall()}
     for n in nodes:
         n["style"] = json.loads(n.get("style") or "{}")
+        n["category"] = cats.get(n["ref_id"] or "") if n["ref_type"] == "l1_entry" else (
+            "timeline_event" if n["ref_type"] == "timeline_event" else "free")
     return {"board": board, "nodes": nodes, "edges": edges}
 
 

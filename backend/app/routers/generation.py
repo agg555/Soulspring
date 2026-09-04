@@ -13,7 +13,7 @@ from fastapi import HTTPException
 
 from ..assembly import assembled_text, build_assembly, get_chapter_plan, save_chapter_plan
 from ..audit.anti_ai import build_anti_ai_prompt_section, check_dash_count, cleanup_dashes
-from ..common import _load_skill_body, _now, _prompt
+from ..common import _now, _prompt, skill_section
 from ..db import tx
 from ..ledger.usage import chat_completion
 from ..settings_store import get_settings
@@ -61,13 +61,6 @@ def _book_style_section(pid: str) -> str:
     return "## 文风要求\n" + "\n".join(lines) + "\n"
 
 
-def _skill_section(skill: str | None) -> str:
-    """生成处选技能(需求稿 2026-08-31):与终审台同机制,技能正文拼进提示词上下文。"""
-    if not skill:
-        return ""
-    return f"## 启用技能:{skill}\n\n{_load_skill_body(skill)}"
-
-
 def _generate_draft_text(pid: str, node: dict, *, force_new_plan: bool,
                          skill: str | None = None,
                          progress=None) -> tuple[str, dict, list[dict]]:
@@ -81,7 +74,7 @@ def _generate_draft_text(pid: str, node: dict, *, force_new_plan: bool,
     plan = get_chapter_plan(node["id"])
     calls: list[dict] = []
 
-    skill_text = _skill_section(skill)
+    skill_text = skill_section(skill)
     extra_sections = None
     if skill_text:
         extra_sections = [{
@@ -98,7 +91,7 @@ def _generate_draft_text(pid: str, node: dict, *, force_new_plan: bool,
         r = chat_completion(
             [{"role": "system", "content": prompt},
              {"role": "user", "content": "请输出本章创作计划 JSON。"}],
-            action="chapter_plan", project_id=pid, agent_type="planner",
+            action="chapter_plan", project_id=pid, node_id=node["id"], agent_type="planner",
             # 输出预算 8000:该模型强制思考,思考 token 计入 completion_tokens;
             # 原 2000 会被思考链吃满,JSON 根本出不来(M6 实测输出 2000 而回包 0 字)
             input_summary=f"计划卡:{node['title']}", max_tokens_override=8000)
@@ -119,7 +112,7 @@ def _generate_draft_text(pid: str, node: dict, *, force_new_plan: bool,
     })
     r = chat_completion(
         [{"role": "system", "content": prompt}, {"role": "user", "content": "开始撰写本章正文。"}],
-        action="chapter_draft", project_id=pid, agent_type="writer",
+        action="chapter_draft", project_id=pid, node_id=node["id"], agent_type="writer",
         # 24000:max 档思考可达 8-15K token,叠 2000 字正文约 3-4K;
         # 原 8192 实测被打满截断,正文 0 字
         input_summary=f"草稿:{node['title']}", max_tokens_override=24000)
@@ -151,7 +144,7 @@ def _normalize(draft: str, calls: list, pid: str, node: dict) -> str:
     })
     r = chat_completion(
         [{"role": "system", "content": prompt}, {"role": "user", "content": "输出调整后的完整正文。"}],
-        action="chapter_normalize", project_id=pid, agent_type="writer",
+        action="chapter_normalize", project_id=pid, node_id=node["id"], agent_type="writer",
         # 16000:规整走 low 档(思考近乎为 0),但要装下扩写后的完整正文
         input_summary=f"规整:{node['title']} ({count}字)", max_tokens_override=16000)
     calls.append(r)
@@ -171,7 +164,7 @@ def _llm_review(pid: str, node: dict, draft: str, plan: dict) -> tuple[dict | No
         r = chat_completion(
             [{"role": "system", "content": prompt},
              {"role": "user", "content": "请输出七维度评审 JSON。"}],
-            action="chapter_review", project_id=pid, agent_type="reviewer",
+            action="chapter_review", project_id=pid, node_id=node["id"], agent_type="reviewer",
             # 8000:评审走 max 档,思考会先吃掉 2-5K,2500 装不下七维度 JSON
             input_summary=f"评审:{node['title']}", max_tokens_override=8000)
         try:
@@ -208,12 +201,12 @@ def _repair_once(pid: str, node: dict, skill: str | None) -> tuple[dict, float]:
         "{{PLAN}}": json.dumps(plan, ensure_ascii=False, indent=1),
         "{{ANTI_AI}}": build_anti_ai_prompt_section(),
     })
-    skill_text = _skill_section(skill)
+    skill_text = skill_section(skill)
     if skill_text:
         prompt += "\n\n" + skill_text
     r = chat_completion(
         [{"role": "system", "content": prompt}, {"role": "user", "content": "输出修复后的完整正文。"}],
-        action="chapter_repair", project_id=pid, agent_type="writer",
+        action="chapter_repair", project_id=pid, node_id=node["id"], agent_type="writer",
         # 同草稿:max 档思考 + 完整正文
         input_summary=f"自修:{node['title']}", max_tokens_override=24000)
     repaired = r["content"].strip()

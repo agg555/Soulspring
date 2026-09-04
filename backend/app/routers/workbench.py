@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..assembly import build_assembly, get_chapter_plan, save_chapter_plan
-from ..common import _now
+from ..common import _now, skill_section
 from ..db import tx
 from ..llm.atomic_io import write_text_atomic
 from ..settings_store import get_settings, resolve_skill
@@ -91,7 +91,18 @@ def _replace_changeset(pid: str, node: dict, draft: str, plan: dict,
 @router.get("/{nid}/preview")
 def preview(nid: str, project_id: str) -> dict:
     node = _get_node(project_id, nid)
-    assembly = build_assembly(project_id, nid, log=False)
+    # 实跑 2026-09-02 拍板(#3):预览按"当前生效技能"真实计入装配
+    # (技能 kind=always 不受上限裁剪),文案与生成时同口径;
+    # 运行时在下拉临时手选其他技能时,以生成时实际为准。
+    effective = resolve_skill(project_id)
+    extra = None
+    if effective:
+        sec = skill_section(effective)
+        extra = [{
+            "source": "skill", "kind": "always", "title": f"技能:{effective}",
+            "content": sec,
+        }]
+    assembly = build_assembly(project_id, nid, log=False, extra_sections=extra)
     with tx() as conn:
         l4 = conn.execute("SELECT content, revision FROM l4_texts WHERE node_id=?",
                           (nid,)).fetchone()
@@ -104,7 +115,7 @@ def preview(nid: str, project_id: str) -> dict:
         "revision": l4["revision"] if l4 else 0,
         "changeset": (_open_changeset(nid) and _changeset_view(_open_changeset(nid))) or None,
         # 技能三档(需求3):前端下拉初值 = override ?? global;override 为 null 表示"跟随全局"
-        "skill_effective": resolve_skill(project_id),
+        "skill_effective": effective,
         "skill_override": (skills_cfg.get("book_overrides") or {}).get(project_id),
         "skill_global": skills_cfg.get("global_default") or "",
         # 进行中任务(需求1):切走再切回时前端据此续显进度
@@ -155,10 +166,11 @@ def _run_generation(tid: str, pid: str, node: dict, skill: str | None, kind: str
                 progress("review")
                 review, review_cost = _llm_review(pid, node, draft, plan)
                 if isinstance(review, dict) and review.get("review_error"):
-                    # S7:评审失败可见——异常串经任务 note 弹出,不写进 changeset.review
-                    review_err = review.pop("review_error")
-                    if not review:
-                        review = None
+                    # S7:评审失败可见。修复批 2026-09-03:失败也持久落 changeset.review
+                    # ({"review_error":...}),前端渲染警示条——只靠任务 note 一闪而过,
+                    # 刷新后无痕(实跑实测的"UI 无感知"根因)。
+                    review_err = review.get("review_error")
+                    review = {"review_error": review_err}
             view = _replace_changeset(pid, node, draft, plan, validations, review, cs)
             view["skill"] = skill
             usage = round(sum(c["usage"]["cost_total"] for c in calls) + review_cost, 6)

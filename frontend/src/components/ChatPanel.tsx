@@ -19,19 +19,21 @@ const POLL_MS = 2500;
 
 export interface ChatPanelProps {
   projectId: string | null;
-  ownerType: "review" | "chat_test" | "outline_node" | "branch" | "timeline_event" | "relation"
-    | "graph_node" | "graph_edge" | "graph_board";
-  ownerId: string | null;         // review=章节点;outline_node=节点;branch=主干节点;事件/关系=对象 id
+  ownerType: "review" | "chat_test" | "outline_node" | "branch" | "timeline_event"
+    | "graph_node" | "graph_edge" | "graph_board" | "book";
+  ownerId: string | null;         // review=章节点;outline_node=节点;branch=主干节点;图谱对象=id
   defaultSessionName: string;     // 首条对话线的预填名
   allowSkill?: boolean;
   allowTemp?: boolean;
   allowRefs?: boolean;            // 显示 @章/@角色/@条目/@伏笔 选择器
-  allowPresets?: boolean;         // 显示「优化」「奇思妙想」预设按钮(C3 节点对话)
+  allowPresets?: boolean;         // 显示预设按钮(C3 节点对话;组可经 presets 换)
+  presets?: { key: string; label: string; hint: string }[];  // 预设组覆盖(书级=起步方向卡)
   sessionId?: string | null;      // 直连指定会话(分支视图):隐藏线选择与新建
   emptyHint?: string;
   onAdopted?: (target: string) => void;   // 采纳成功后通知父组件刷新
-  // 轻档采纳取"改前值"的回调(event_field/relation_field 等对象字段):返回空串=无改前
+  // 轻档采纳取"改前值"的回调(event_field 等对象字段):返回空串=无改前
   getAdoptBefore?: (s: Suggestion) => string;
+  getAdoptAnchor?: (s: Suggestion) => { x: number; y: number } | null;
 }
 
 const SEVERITY_CLASS: Record<string, string> = {
@@ -39,7 +41,7 @@ const SEVERITY_CLASS: Record<string, string> = {
 };
 const TARGET_LABEL: Record<string, string> = {
   outline_field: "大纲字段", chapter_text: "正文修改", none: "仅提示",
-  event_field: "事件字段", relation_field: "关系字段",
+  event_field: "事件字段",
 };
 const PRESETS = [
   { key: "optimize", label: "优化", hint: "点选后发送:针对当前节点给具体改法(outline_field 建议)" },
@@ -50,6 +52,8 @@ export default function ChatPanel({
   projectId, ownerType, ownerId, defaultSessionName,
   allowSkill, allowTemp, allowRefs, allowPresets, sessionId, emptyHint, onAdopted,
   getAdoptBefore,
+  getAdoptAnchor,
+  presets = PRESETS,
 }: ChatPanelProps) {
   const [sessions, setSessions] = useState<ConversationSession[] | null>(null);
   const [sid, setSid] = useState<string | null>(sessionId ?? null);
@@ -199,7 +203,9 @@ export default function ChatPanel({
     if (!sid) return;
     setError("");
     try {
-      const r = await api.adoptSuggestion({ session_id: sid, message_id: m.id, index: idx });
+      const sug = m.meta?.suggestions?.[idx];
+      const anchor = sug && getAdoptAnchor ? getAdoptAnchor(sug) : null;
+      const r = await api.adoptSuggestion({ session_id: sid, message_id: m.id, index: idx, anchor });
       setAdopting(null);
       flash(r.summary || "已采纳");
       loadMessages();          // 刷新:该建议卡转"已采纳"钉住
@@ -260,6 +266,18 @@ export default function ChatPanel({
         </div>
       )}
       {emptyHint && messages.length === 0 && !task && <p className="muted small">{emptyHint}</p>}
+      {/* 起步方向卡(书级对话空态,骨架批执行书 §2):点击选中预设,输入后发送 */}
+      {allowPresets && messages.length === 0 && !task && presets.length > 0 && (
+        <div className="dir-cards">
+          {presets.map((p) => (
+            <button key={p.key} className={preset === p.key ? "on" : ""}
+              onClick={() => setPreset(preset === p.key ? null : p.key)}>
+              <b>{p.label}</b>
+              <span className="small">{p.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="chat-history">
         {messages.map((m) => (
@@ -342,8 +360,7 @@ export default function ChatPanel({
       )}
       {/* 轻档采纳确认:改前/改后 diff → 人确认写回(A-采纳规则) */}
       {adopting && adoptingSug && (adoptingSug.target_type === "outline_field"
-        || adoptingSug.target_type === "event_field"
-        || adoptingSug.target_type === "relation_field") && (
+        || adoptingSug.target_type === "event_field") && (
         <div className="dialog">
           <p><b>采纳字段建议(轻档)</b>:确认后写回并留痕。</p>
           <p className="small">
@@ -393,7 +410,7 @@ export default function ChatPanel({
       {allowPresets && (
         <div className="ref-bar">
           <span className="muted small">预设模式:</span>
-          {PRESETS.map((p) => (
+          {presets.map((p) => (
             <button key={p.key} title={p.hint}
               className={`chip ${preset === p.key ? "on" : ""}`}
               onClick={() => setPreset(preset === p.key ? null : p.key)}>
@@ -401,7 +418,7 @@ export default function ChatPanel({
             </button>
           ))}
           {preset && (
-            <span className="muted small">已选「{PRESETS.find((x) => x.key === preset)?.label}」,输入后发送;再次点击取消。</span>
+            <span className="muted small">已选「{presets.find((x) => x.key === preset)?.label}」,输入后发送;再次点击取消。</span>
           )}
         </div>
       )}

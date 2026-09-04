@@ -221,3 +221,78 @@ def get_chapter_plan(node_id: str) -> dict:
     with tx() as conn:
         row = conn.execute("SELECT plan FROM chapter_plans WHERE node_id=?", (node_id,)).fetchone()
     return json.loads(row["plan"]) if row else {}
+
+
+def build_book_context(project_id: str, limit: int | None = None) -> str:
+    """书级上下文(书工作区中央"书级对话",骨架批 2026-09-04,执行书 §2):
+    书信息 + 大纲概要(树形标题链,节点带 id 供 outline_field 建议引用原值)
+    + 近期章节状态 + L1 常驻条目摘要。裁剪同 build_node_context:超限先砍 L1 段,
+    守 assembly.token_limit(默认 6000)上限。
+    """
+    limit = limit or int(get_settings()["assembly"].get("token_limit") or 6000)
+    with tx() as conn:
+        sections: list[dict] = []
+
+        book = conn.execute(
+            "SELECT name, genre, description FROM projects WHERE id=?", (project_id,)).fetchone()
+        bits: list[str] = []
+        if book is not None:
+            bits.append(f"书名:{book['name']}")
+            if book["genre"]:
+                bits.append(f"类型:{book['genre']}")
+            if book["description"]:
+                bits.append(f"简介:{book['description']}")
+        sections.append({"kind": "always", "title": "本书信息", "content": "\n".join(bits)})
+
+        # 大纲概要:树形标题链(缩进 + 状态 + node_id 原文,建议引用必须用 id 原文)
+        lines: list[str] = []
+
+        def _walk(parent_id: str | None, depth: int) -> None:
+            rows = conn.execute(
+                "SELECT id, kind, title, status FROM outline_nodes WHERE project_id=?"
+                " AND parent_id IS ? ORDER BY sort_order", (project_id, parent_id)).fetchall()
+            for r in rows:
+                lines.append("  " * depth
+                             + f"{OUTLINE_KIND_LABEL.get(r['kind'], r['kind'])}·{r['title']}"
+                               f"[{r['status']}] (node_id=`{r['id']}`)")
+                _walk(r["id"], depth + 1)
+
+        _walk(None, 0)
+        sections.append({"kind": "always", "title": "大纲概要(树形标题链)",
+                         "content": "\n".join(lines) or "(大纲还是空的)"})
+
+        # 近期章节状态:最近状态变动的 8 章(含字数,读 l4 正文长度)
+        recent = conn.execute(
+            "SELECT n.id, n.title, n.status, n.status_changed_at,"
+            " (SELECT LENGTH(content) FROM l4_texts t WHERE t.node_id = n.id) AS chars"
+            " FROM outline_nodes n WHERE n.project_id=? AND n.kind='chapter'"
+            " AND n.status_changed_at IS NOT NULL"
+            " ORDER BY n.status_changed_at DESC LIMIT 8", (project_id,)).fetchall()
+        if recent:
+            rlines = [f"{r['title']}[{r['status']}]"
+                      f"{f' {r['chars']} 字' if r['chars'] else ''}"
+                      f"({r['status_changed_at'] or ''})" for r in recent]
+            sections.append({"kind": "always", "title": "近期章节状态",
+                             "content": "\n".join(rlines)})
+
+        # L1 常驻条目摘要(条目内容截 400 字,超限整段先砍)
+        for e in conn.execute(
+                "SELECT category, name, content FROM l1_entries"
+                " WHERE project_id=? AND entry_status='confirmed' AND presence='always'"
+                " ORDER BY category, name", (project_id,)).fetchall():
+            body_text = e["content"] or ""
+            if len(body_text) > 400:
+                body_text = body_text[:400] + "…(摘要截断,全文见档案库)"
+            sections.append({"kind": "on_demand", "title": f"L1·{e['name']}",
+                             "content": f"({e['category']}) {body_text}"})
+
+    total = sum(len(s["content"]) for s in sections)
+    for s in sections:   # 超限先砍 L1 摘要段(keep 书信息/大纲概要/近期章节)
+        if total <= limit:
+            break
+        if s["kind"] == "on_demand":
+            total -= len(s["content"])
+            s["included"] = False
+    for s in sections:
+        s.setdefault("included", True)
+    return "\n\n".join(f"## {s['title']}\n{s['content']}" for s in sections if s["included"])

@@ -53,7 +53,7 @@ def put_llm(body: LlmIn) -> dict:
 
 
 class PriceEntry(BaseModel):
-    model: str
+    model: str | None = None  # models 组必填;default/standard 组无 model(defaulter 曾因此 422)
     input_per_m: float
     output_per_m: float
 
@@ -61,6 +61,8 @@ class PriceEntry(BaseModel):
 class PricingIn(BaseModel):
     default: PriceEntry | None = None
     models: list[PriceEntry] | None = None
+    standard: PriceEntry | None = None       # 正价(折扣到期自动启用);显式传 null 清除
+    discount_until: str | None = None        # 折扣最后有效日 YYYY-MM-DD(含当天)
 
 
 @router.put("/pricing")
@@ -70,6 +72,10 @@ def put_pricing(body: PricingIn) -> dict:
         patch["default"] = body.default.model_dump()
     if body.models is not None:
         patch["models"] = [m.model_dump() for m in body.models]
+    if body.standard is not None:
+        patch["standard"] = body.standard.model_dump()
+    if body.discount_until is not None:
+        patch["discount_until"] = body.discount_until or None
     if not patch:
         raise HTTPException(422, "无字段可更新")
     update_settings("pricing", patch)

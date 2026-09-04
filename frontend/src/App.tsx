@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { STAGE_LABELS } from "./stages";
 import type { GenTask } from "./types";
+import { ConfirmHost } from "./components/uiConfirm";
 import OverviewPage from "./pages/Overview";
 import SettingsPage from "./pages/Settings";
 import ChatTestPage from "./pages/ChatTest";
@@ -52,6 +53,7 @@ export default function App() {
         </nav>
       </header>
       <main>{TABS.find((t) => t.key === tab)!.el}</main>
+      <ConfirmHost />
       <footer>
         <span className="muted">本地单用户 · 人主编 99% · M1 薄核</span>
       </footer>

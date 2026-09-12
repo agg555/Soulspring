@@ -1,0 +1,21 @@
+# 换行符统一：入库一律 LF，检出按平台（Windows 转 CRLF）
+# 背景：迁移包在打包时被转成 CRLF，而原仓库是 LF，导致两边 67 个文件"内容不同"
+# 实为换行差异。立此规则后，换行不再进 diff。
+* text=auto eol=lf
+
+# 二进制资产：不参与换行转换，也不做 diff
+*.db binary
+*.db-wal binary
+*.db-shm binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.zip binary
+*.pdf binary
+*.doc binary
+*.docx binary

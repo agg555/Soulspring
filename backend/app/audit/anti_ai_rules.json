@@ -1,0 +1,31 @@
+{
+  "_source": "anti_ai 结构类规则库(批次三算法体检,2026-09-06;去AI味检索 A/B 档融合:blader/humanizer 35 模式+avoid-ai-writing 分类学+anti-ai-tell linter 范式,全部 MIT;英文规则已中文网文本地化改写,非翻译;规则可热更=改本文件即生效,零 LLM 调用)",
+  "_note": "threshold 口径:count 类=出现次数阈值;ratio 类=每千字密度。severity: high=强 AI 指纹/low=提示级",
+  "connectives": {
+    "_desc": "高频 AI 连接词/腔调词(humanizer #7/#23/#24 本地化;含网文常见的排比腔与总结腔触发词)",
+    "words": ["然而", "与此同时", "不仅仅", "某种意义上", "值得玩味", "值得一提", "仿佛在诉说", "似乎在宣告", "这一刻他明白", "或许这就是", "无一例外", "恍若隔世", "宿命般", "命运的齿轮", "空气仿佛凝固", "时间仿佛静止"],
+    "ratio_per_kilo": 2.5,
+    "severity": "high"
+  },
+  "parallelism": {
+    "_desc": "连续排比:相邻 3+ 句句首 4 字相同或句长差 <30%(humanizer #10/#11 本地化)",
+    "min_run": 3,
+    "len_ratio": 0.3,
+    "severity": "high"
+  },
+  "symmetry": {
+    "_desc": "对称段落:相邻两段结构镜像(首句同长±2字且均无对话)——总结腔/散文诗腔指纹",
+    "len_tol": 2,
+    "severity": "low"
+  },
+  "not_x_but_y": {
+    "_desc": "「不是…而是…」密度(humanizer #9;现有 BANNED_PATTERNS 只查单次,这里按密度)",
+    "ratio_per_kilo": 1.2,
+    "severity": "low"
+  },
+  "grand_summary": {
+    "_desc": "章尾升华腔:结尾 15% 内出现 抽象总结句(这/那+抽象名词+让/意味/见证 等)(humanizer #25/#27 本地化)",
+    "patterns": ["这就是", "那是一种", "见证着", "意味着", "诉说着", "回响着"],
+    "severity": "low"
+  }
+}

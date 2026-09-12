@@ -1,0 +1,3 @@
+# 开发/测试依赖(CI backend job 与本地 venv 对齐;2026-09-12 修复 CI
+# "No module named pytest"——运行依赖与测试依赖分离,本文件随 CI 安装)
+pytest==9.1.1

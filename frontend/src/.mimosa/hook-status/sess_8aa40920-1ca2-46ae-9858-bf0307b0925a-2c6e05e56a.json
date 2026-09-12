@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-09-06T08:14:53.150Z",
+  "sessionId": "sess_8aa40920-1ca2-46ae-9858-bf0307b0925a",
+  "event": "PostToolUse",
+  "toolName": "Edit",
+  "file": "C:/Users/Administrator/.zcode/cli/memories/projects/project-1ffa5c07facafc8b/memory/soulspring-project-status.md",
+  "outcome": "clear",
+  "coverage": "complete",
+  "findingCount": 0,
+  "durationMs": 22,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}

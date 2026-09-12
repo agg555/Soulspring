@@ -1,0 +1,60 @@
+# 批次四②:最小 CI——pytest + tsc/build 两道门(执行书 §1②;外脑"合并前强制门禁"清偿)
+name: CI
+on: [push, workflow_dispatch]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - run: python -m pytest tests -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  # 候选清单落地批 C:前端 Playwright 冒烟五景(零真 AI)。continue-on-error——
+  # CI 全新空库无实跑书,各景靠书存在性守卫优雅跳过;本地有书才实跑(为准)。
+  e2e:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install -r backend/requirements.txt
+      - run: (cd backend && nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8600 >/tmp/svc.log 2>&1 &)
+      # package.json/package-lock 在 frontend/ 下——四步 npm 命令必须挂 working-directory
+      # (2026-09-12 修复:e2e 首跑即挂"no package-lock.json",根因=在仓库根跑 npm ci)
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: E2E_SERVER_RUNNING=1 npx playwright test
+        working-directory: frontend

@@ -1,0 +1,5 @@
+# 批次四②:直接依赖锁版本(2026-09-06 按 backend/.venv 实装 pip freeze 钉死;
+# 发行前不再漂移;升级=改版本号+本地全量回归)
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+openai==3.6.0
